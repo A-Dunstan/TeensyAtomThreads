@@ -3,6 +3,7 @@
 #include <EventResponder.h>
 #include <setjmp.h>
 #include <new>
+#include <sys/reent.h>
 
 #define IDLE_STACK_SIZE 256
 
@@ -39,10 +40,17 @@ FLASHMEM void archThreadContextInit (ATOM_TCB *tcb_ptr, void *stack_top, void (*
   frame->lr = 0xFFFFFFFF; // invalid EXC_RETURN value, entry point must not return
   frame->XPSR = 1<<24; // EPSR.T must be set, CPU supports thumb mode only!
   tcb_ptr->sp_save_ptr = frame;
+
+  tcb_ptr->priv.r = &tcb_ptr->priv.reent;
+  _REENT_INIT_PTR(tcb_ptr->priv.r);
 }
 
 // assume this thread is already running (e.g. entry_point is a redirect function such as longjmp)
 FLASHMEM void archFirstThreadRestore(ATOM_TCB *new_tcb_ptr) {
+  // first thread uses existing reent
+  _reclaim_reent(new_tcb_ptr->priv.r);
+  new_tcb_ptr->priv.r = _impure_ptr;
+
   new_tcb_ptr->entry_point(new_tcb_ptr->entry_param);
 }
 

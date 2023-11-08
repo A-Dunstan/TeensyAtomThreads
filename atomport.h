@@ -32,6 +32,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/reent.h>
 
 /* Required number of system ticks per second (normally 100 for 10ms tick) */
 #define SYSTEM_TICKS_PER_SEC            100
@@ -44,8 +45,10 @@
 typedef struct {
   // r4,r5,r6,r7,r8,r9,r10,r11
   uint32_t regs[8];
-  // s16,s17,s18,s19,s20,s21,s22,s23,s24,s25,s26,s27,s28,s29,s30,s31
-  float fregs[16];
+  // d8,d9,d10,d11,d12,d13,d14,d15
+  double fregs[8];
+  struct _reent *r;
+  struct _reent reent;
 } thread_private;
 
 #define THREAD_PORT_PRIV thread_private priv;

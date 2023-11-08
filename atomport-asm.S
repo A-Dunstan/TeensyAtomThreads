@@ -40,8 +40,9 @@ atomSVC_ISR:
   pop {r4,lr}
   b asmContextSwitch
   .size atomPendSV_ISR, .-atomPendSV_ISR
+  
+  .extern _impure_ptr
 
-  .global asmContextSwitch
   .thumb_func
   .type  asmContextSwitch, %function
 asmContextSwitch:
@@ -49,11 +50,17 @@ asmContextSwitch:
   @ r1: ATOM_TCB *old_tcb
 
   mrs r3, PSP
-  stmia r1!, {r3-r11}
-  ldmia r0!, {r3-r11}
-  vstm r1, {s16-s31}
-  vldm r0, {s16-s31}
+  ldr r2, = _impure_ptr
+  str r3, [r1], #8      @ store old SP, increment to &priv
+  ldr r3, [r0], #8      @ load new SP, increment to &priv
+  stmia r1!, {r4-r11}   @ store old priv.regs
+  ldmia r0!, {r4-r11}   @ load new priv.regs
+  vstm r1, {d8-d15}     @ store old priv.fregs
+  vldm r0, {d8-d15}     @ load new priv.fregs
+  ldr r1, [r0,#64]      @ load new _impure_ptr
   msr PSP, r3
+  str r1, [r2]
   bx lr
+  .pool
   .size asmContextSwitch, .-asmContextSwitch
 
