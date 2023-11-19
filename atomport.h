@@ -66,16 +66,4 @@ typedef struct {
 /* Uncomment to enable stack-checking */
 /* #define ATOM_STACK_CHECKING */
 
-static uint32_t atomic_add(uint32_t *, uint32_t) __attribute__((unused));
-static uint32_t atomic_add(uint32_t *p, uint32_t amount) {
-   uint32_t r, status;
-   do {
-     asm volatile("ldrex %0, %1" : "=r"(r) : "m"(*p));
-     r += amount;
-     asm volatile("strex %0, %2, %1" : "=&r"(status), "=m"(*p) : "r"(r));
-   } while (status==1);
-   return r;
-}
-
-
 #endif /* __ATOM_PORT_H */
