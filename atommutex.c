@@ -110,14 +110,176 @@
 typedef struct mutex_timer
 {
     ATOM_TCB *tcb_ptr;      /* Thread which is suspended with timeout */
-    ATOM_MUTEX *mutex_ptr;  /* Mutex the thread is suspended on */
+    ATOM_TCB **suspQ;       /* Queue of the object that the thread is suspended on */
 } MUTEX_TIMER;
 
+/**
+ * \b atomMutexTimerCallback
+ *
+ * This is an internal function not for use by application code.
+ *
+ * Timeouts on suspended threads are notified by the timer system through
+ * this generic callback. The timer system calls us back with a pointer to
+ * the relevant \c MUTEX_TIMER object which is used to retrieve the
+ * mutex details.
+ *
+ * @param[in] cb_data Pointer to a MUTEX_TIMER object
+ */
+static void atomMutexTimerCallback (POINTER cb_data)
+{
+    MUTEX_TIMER *timer_data_ptr;
+    CRITICAL_STORE;
 
-/* Forward declarations */
+    /* Get the MUTEX_TIMER structure pointer */
+    timer_data_ptr = (MUTEX_TIMER *)cb_data;
 
-static void atomMutexTimerCallback (POINTER cb_data);
+    /* Check parameter is valid */
+    if (timer_data_ptr)
+    {
+        /* Enter critical region */
+        CRITICAL_START ();
 
+        /* Set status to indicate to the waiting thread that it timed out */
+        timer_data_ptr->tcb_ptr->suspend_wake_status = ATOM_TIMEOUT;
+
+        /* Flag as no timeout registered */
+        timer_data_ptr->tcb_ptr->suspend_timo_cb = NULL;
+
+        /* Remove this thread from the mutex's suspend list */
+        (void)tcbDequeueEntry (timer_data_ptr->suspQ, timer_data_ptr->tcb_ptr);
+
+        /* Put the thread on the ready queue */
+        (void)tcbEnqueuePriority (&tcbReadyQ, timer_data_ptr->tcb_ptr);
+
+        /* Exit critical region */
+        CRITICAL_END ();
+
+        /**
+         * Note that we don't call the scheduler now as it will be called
+         * when we exit the ISR by atomIntExit().
+         */
+    }
+}
+
+/* These functions should be called under CRITICAL_START()/CRITICAL_END() */
+
+static uint8_t threadSuspend(ATOM_TCB *tcb_ptr, int32_t timeout, ATOM_TCB **suspQ, MUTEX_TIMER *timer_data, ATOM_TIMER *timer_cb)
+{
+	uint8_t status;
+
+	/* Set suspended status for the current thread */
+	tcb_ptr->suspended = TRUE;
+
+	/* Track errors */
+	status = ATOM_OK;
+
+	/* Register a timer callback if requested */
+	if (timeout>0)
+	{
+		/* Fill out the data needed by the callback to wake us up */
+		timer_data->tcb_ptr = tcb_ptr;
+		timer_data->suspQ = suspQ;
+
+		/* Fill out the timer callback request structure */
+		timer_cb->cb_func = atomMutexTimerCallback;
+		timer_cb->cb_data = (POINTER)timer_data;
+		timer_cb->cb_ticks = timeout;
+
+		/**
+		 * Store the timer details in the TCB so that we can
+		 * cancel the timer callback if the mutex is put
+		 * before the timeout occurs.
+		 */
+		tcb_ptr->suspend_timo_cb = timer_cb;
+
+		/* Reigster a callback on timeout */
+		if (atomTimerRegister (timer_cb) != ATOM_OK)
+		{
+			/* Timer registration failed */
+			status = ATOM_ERR_TIMER;
+
+			/* Clean up and return to the caller */
+			(void)tcbDequeueEntry(suspQ, tcb_ptr);
+			tcb_ptr->suspended = FALSE;
+			tcb_ptr->suspend_timo_cb = NULL;
+		}
+	}
+
+	/* Set no timeout requested */
+	else
+	{
+		/* No need to cancel timeouts on this one */
+		tcb_ptr->suspend_timo_cb = NULL;
+	}
+
+	return status;
+}
+
+static uint8_t threadResume(ATOM_TCB *tcb_ptr, uint8_t wakeStatus)
+{
+	/* Return status to the waiting thread */
+	tcb_ptr->suspend_wake_status = wakeStatus;
+
+	/* Put the thread on the ready queue */
+	if (tcbEnqueuePriority(&tcbReadyQ, tcb_ptr) != ATOM_OK)
+	{
+		return ATOM_ERR_QUEUE;
+	}
+
+	/* If there's a tmeout on this suspension, cancel it */
+	if (tcb_ptr->suspend_timo_cb)
+	{
+		/* Cancel the callback */
+		if (atomTimerCancel (tcb_ptr->suspend_timo_cb) != ATOM_OK)
+		{
+			return ATOM_ERR_TIMER;
+		}
+
+		/* Flag as no timeout registered */
+		tcb_ptr->suspend_timo_cb = NULL;
+	}
+
+	return ATOM_OK;
+}
+
+// wakes all threads in a queue with ATOM_ERR_DELETED
+static uint8_t destroyObjectQueue(ATOM_TCB **suspQ)
+{
+	CRITICAL_STORE;
+	uint8_t status;
+	ATOM_TCB *tcb_ptr;
+
+	int woken_threads = FALSE;
+
+	/* Default to success status unless errors occur during wakeup */
+	status = ATOM_OK;
+
+	CRITICAL_START ();
+
+	while ((tcb_ptr = tcbDequeueHead(suspQ)) != NULL) {
+		status = threadResume(tcb_ptr, ATOM_ERR_DELETED);
+
+		if (status == ATOM_ERR_QUEUE)
+			break;
+
+		woken_threads = TRUE;
+	}
+
+	CRITICAL_END ();
+
+	/* Call scheduler if any thread were woken up */
+	if (woken_threads == TRUE)
+	{
+		/**
+		 * Only call the scheduler if we are in thread context, otherwise
+		 * it will be called on exiting the ISR by atomIntExit().
+		 */
+		if (atomCurrentContext() != NULL)
+			atomSched (FALSE);
+	}
+
+	return (status);
+}
 
 /**
  * \b atomMutexCreate
@@ -191,9 +353,6 @@ uint8_t atomMutexCreate (ATOM_MUTEX *mutex)
 uint8_t atomMutexDelete (ATOM_MUTEX *mutex)
 {
     uint8_t status;
-    CRITICAL_STORE;
-    ATOM_TCB *tcb_ptr;
-    uint8_t woken_threads = FALSE;
 
     /* Parameter check */
     if (mutex == NULL)
@@ -203,80 +362,7 @@ uint8_t atomMutexDelete (ATOM_MUTEX *mutex)
     }
     else
     {
-        /* Default to success status unless errors occur during wakeup */
-        status = ATOM_OK;
-
-        /* Wake up all suspended tasks */
-        while (1)
-        {
-            /* Enter critical region */
-            CRITICAL_START ();
-
-            /* Check if any threads are suspended */
-            tcb_ptr = tcbDequeueHead (&mutex->suspQ);
-
-            /* A thread is suspended on the mutex */
-            if (tcb_ptr)
-            {
-                /* Return error status to the waiting thread */
-                tcb_ptr->suspend_wake_status = ATOM_ERR_DELETED;
-
-                /* Put the thread on the ready queue */
-                if (tcbEnqueuePriority (&tcbReadyQ, tcb_ptr) != ATOM_OK)
-                {
-                    /* Exit critical region */
-                    CRITICAL_END ();
-
-                    /* Quit the loop, returning error */
-                    status = ATOM_ERR_QUEUE;
-                    break;
-                }
-
-                /* If there's a timeout on this suspension, cancel it */
-                if (tcb_ptr->suspend_timo_cb)
-                {
-                    /* Cancel the callback */
-                    if (atomTimerCancel (tcb_ptr->suspend_timo_cb) != ATOM_OK)
-                    {
-                        /* Exit critical region */
-                        CRITICAL_END ();
-
-                        /* Quit the loop, returning error */
-                        status = ATOM_ERR_TIMER;
-                        break;
-                    }
-
-                    /* Flag as no timeout registered */
-                    tcb_ptr->suspend_timo_cb = NULL;
-
-                }
-
-                /* Exit critical region */
-                CRITICAL_END ();
-
-                /* Request a reschedule */
-                woken_threads = TRUE;
-            }
-
-            /* No more suspended threads */
-            else
-            {
-                /* Exit critical region and quit the loop */
-                CRITICAL_END ();
-                break;
-            }
-        }
-
-        /* Call scheduler if any threads were woken up */
-        if (woken_threads == TRUE)
-        {
-            /**
-             * Only call the scheduler if we are in thread context, otherwise
-             * it will be called on exiting the ISR by atomIntExit().
-             */
-            if (atomCurrentContext())
-                atomSched (FALSE);
-        }
+		status = destroyObjectQueue(&mutex->suspQ);
     }
 
     return (status);
@@ -388,50 +474,7 @@ uint8_t atomMutexGet (ATOM_MUTEX *mutex, int32_t timeout)
                 }
                 else
                 {
-                    /* Set suspended status for the current thread */
-                    curr_tcb_ptr->suspended = TRUE;
-
-                    /* Track errors */
-                    status = ATOM_OK;
-
-                    /* Register a timer callback if requested */
-                    if (timeout)
-                    {
-                        /* Fill out the data needed by the callback to wake us up */
-                        timer_data.tcb_ptr = curr_tcb_ptr;
-                        timer_data.mutex_ptr = mutex;
-
-                        /* Fill out the timer callback request structure */
-                        timer_cb.cb_func = atomMutexTimerCallback;
-                        timer_cb.cb_data = (POINTER)&timer_data;
-                        timer_cb.cb_ticks = timeout;
-
-                        /**
-                         * Store the timer details in the TCB so that we can
-                         * cancel the timer callback if the mutex is put
-                         * before the timeout occurs.
-                         */
-                        curr_tcb_ptr->suspend_timo_cb = &timer_cb;
-
-                        /* Register a callback on timeout */
-                        if (atomTimerRegister (&timer_cb) != ATOM_OK)
-                        {
-                            /* Timer registration failed */
-                            status = ATOM_ERR_TIMER;
-
-                            /* Clean up and return to the caller */
-                            (void)tcbDequeueEntry (&mutex->suspQ, curr_tcb_ptr);
-                            curr_tcb_ptr->suspended = FALSE;
-                            curr_tcb_ptr->suspend_timo_cb = NULL;
-                        }
-                    }
-
-                    /* Set no timeout requested */
-                    else
-                    {
-                        /* No need to cancel timeouts on this one */
-                        curr_tcb_ptr->suspend_timo_cb = NULL;
-                    }
+					status = threadSuspend(curr_tcb_ptr, timeout, &mutex->suspQ, &timer_data, &timer_cb);
 
                     /* Exit critical region */
                     CRITICAL_END ();
@@ -597,48 +640,12 @@ uint8_t atomMutexPut (ATOM_MUTEX * mutex)
 						 * ordering is taken care of by an ordered list enqueue.
 						 */
 						tcb_ptr = tcbDequeueHead (&mutex->suspQ);
-						if (tcbEnqueuePriority (&tcbReadyQ, tcb_ptr) != ATOM_OK)
-						{
-							/* Exit critical region */
-							CRITICAL_END ();
+						status = threadResume(tcb_ptr, ATOM_OK);
+						CRITICAL_END();
 
-							/* There was a problem putting the thread on the ready queue */
-							status = ATOM_ERR_QUEUE;
-						}
-						else
-						{
-							/* Set OK status to be returned to the waiting thread */
-							tcb_ptr->suspend_wake_status = ATOM_OK;
-
-							/* Set this thread as the new owner of the mutex */
-							mutex->owner = tcb_ptr;
-
-							/* If there's a timeout on this suspension, cancel it */
-							if ((tcb_ptr->suspend_timo_cb != NULL)
-								&& (atomTimerCancel (tcb_ptr->suspend_timo_cb) != ATOM_OK))
-							{
-								/* There was a problem cancelling a timeout on this mutex */
-								status = ATOM_ERR_TIMER;
-							}
-							else
-							{
-								/* Flag as no timeout registered */
-								tcb_ptr->suspend_timo_cb = NULL;
-
-								/* Successful */
-								status = ATOM_OK;
-							}
-
-							/* Exit critical region */
-							CRITICAL_END ();
-
-							/**
-							 * The scheduler may now make a policy decision to
-							 * thread switch. We already know we are in thread
-							 * context so can call the scheduler from here.
-							 */
-							atomSched (FALSE);
-						}
+						/* If thread was queued as ready call the task scheduler */
+						if (status != ATOM_ERR_QUEUE)
+							atomSched(FALSE);
 					}
 					else
 					{
@@ -674,51 +681,163 @@ uint8_t atomMutexPut (ATOM_MUTEX * mutex)
     return (status);
 }
 
-
-/**
- * \b atomMutexTimerCallback
- *
- * This is an internal function not for use by application code.
- *
- * Timeouts on suspended threads are notified by the timer system through
- * this generic callback. The timer system calls us back with a pointer to
- * the relevant \c MUTEX_TIMER object which is used to retrieve the
- * mutex details.
- *
- * @param[in] cb_data Pointer to a MUTEX_TIMER object
- */
-static void atomMutexTimerCallback (POINTER cb_data)
+uint8_t atomCondCreate (ATOM_COND *cond)
 {
-    MUTEX_TIMER *timer_data_ptr;
-    CRITICAL_STORE;
+	if (cond == NULL)
+		return ATOM_ERR_PARAM;
 
-    /* Get the MUTEX_TIMER structure pointer */
-    timer_data_ptr = (MUTEX_TIMER *)cb_data;
+	cond->suspQ = NULL;
 
-    /* Check parameter is valid */
-    if (timer_data_ptr)
-    {
-        /* Enter critical region */
-        CRITICAL_START ();
+	return ATOM_OK;
+}
 
-        /* Set status to indicate to the waiting thread that it timed out */
-        timer_data_ptr->tcb_ptr->suspend_wake_status = ATOM_TIMEOUT;
+uint8_t atomCondDelete(ATOM_COND *cond)
+{
+	uint8_t status;
 
-        /* Flag as no timeout registered */
-        timer_data_ptr->tcb_ptr->suspend_timo_cb = NULL;
+	if (cond == NULL)
+	{
+		status = ATOM_ERR_PARAM;
+	}
+	else
+	{
+		status = destroyObjectQueue(&cond->suspQ);
+	}
 
-        /* Remove this thread from the mutex's suspend list */
-        (void)tcbDequeueEntry (&timer_data_ptr->mutex_ptr->suspQ, timer_data_ptr->tcb_ptr);
+	return (status);
+}
 
-        /* Put the thread on the ready queue */
-        (void)tcbEnqueuePriority (&tcbReadyQ, timer_data_ptr->tcb_ptr);
+uint8_t atomCondWait (ATOM_COND *cond, ATOM_MUTEX *lock, int32_t timeout)
+{
+	uint8_t lockstatus, status;
+	CRITICAL_STORE;
+	MUTEX_TIMER timer_data;
+	ATOM_TIMER timer_cb;
+	ATOM_TCB *curr_tcb_ptr, *tcb_ptr;
 
-        /* Exit critical region */
-        CRITICAL_END ();
+	if (cond == NULL || lock == NULL)
+		return ATOM_ERR_PARAM;
 
-        /**
-         * Note that we don't call the scheduler now as it will be called
-         * when we exit the ISR by atomIntExit().
-         */
-    }
+	curr_tcb_ptr = atomCurrentContext();
+
+	// negative timeout or interrupt context are not supported
+	if (timeout < 0 || curr_tcb_ptr == NULL)
+		return ATOM_WOULDBLOCK;
+
+	CRITICAL_START();
+
+	/* Check if the calling thread owns this mutex */
+	if (lock->owner != curr_tcb_ptr)
+	{
+		CRITICAL_END();
+		return ATOM_ERR_OWNERSHIP;
+	}
+
+	if (lock->count != 1)
+	{
+		CRITICAL_END();
+		/* A recursively locked mutex cannot be properly released here */
+		return ATOM_ERR_OVF;
+	}
+
+	status = ATOM_OK;
+
+	/* From this point on, if something goes wrong we need
+	 * to reacquire the mutex before returning
+	 */
+
+	/* Relinquish ownership */
+	lock->count = 0;
+	lock->owner = NULL;
+
+	/* If any threads are blocked on this mutex, mark one ready.
+	 * Don't execute a thread switch until this thread has been
+	 * suspended on the condition's queue.
+	 */
+	tcb_ptr = tcbDequeueHead (&lock->suspQ);
+	if (tcb_ptr != NULL)
+		status = threadResume(tcb_ptr, ATOM_OK);
+
+	if (status == ATOM_OK && tcbEnqueuePriority (&cond->suspQ, curr_tcb_ptr) != ATOM_OK)
+		status = ATOM_ERR_QUEUE;
+
+	if (status == ATOM_OK)
+		status = threadSuspend(curr_tcb_ptr, timeout, &cond->suspQ, &timer_data, &timer_cb);
+
+	/* Exit critical region */
+	CRITICAL_END ();
+
+	if (status == ATOM_OK)
+	{
+		/**
+		 * Lock has been released, current thread is
+		 * blocking on the condition, schedule in a new
+		 * one. We already know we are in thread context
+		 * so can call the scheduler from here.
+		 */
+		atomSched (FALSE);
+
+		/**
+		 * Normal atomCondWake() wakeups will set ATOM_OK status
+		 * while timeouts will set ATOM_TIMEOUT and cond
+		 * deletions will set ATOM_ERR_DELETED.
+		 */
+		status = curr_tcb_ptr->suspend_wake_status;
+	}
+
+	/* timeout only applies to waiting for the condition to be signalled,
+	 * not reclaiming the mutex afterwards.
+	 */
+	lockstatus = atomMutexGet(lock, 0);
+	if (status == ATOM_OK)
+		status = lockstatus;
+
+	return status;
+}
+
+static uint8_t atomCondWake(ATOM_COND *cond, int wake_all)
+{
+	uint8_t status;
+	CRITICAL_STORE;
+	ATOM_TCB *tcb_ptr;
+	int woken_threads = 0;
+
+	if (cond == NULL)
+		return ATOM_ERR_PARAM;
+
+	status = ATOM_OK;
+
+	CRITICAL_START();
+
+	do
+	{
+		tcb_ptr = tcbDequeueHead(&cond->suspQ);
+		if (tcb_ptr == NULL)
+			break;
+
+		status = threadResume(tcb_ptr, ATOM_OK);
+		if (status != ATOM_ERR_QUEUE)
+			woken_threads = 1;
+
+	} while (wake_all && status == ATOM_OK);
+
+	CRITICAL_END();
+
+	if (woken_threads)
+	{
+		if (atomCurrentContext())
+			atomSched(FALSE);
+	}
+
+	return status;
+}
+
+uint8_t atomCondSignal (ATOM_COND *cond)
+{
+	return atomCondWake(cond, FALSE);
+}
+
+uint8_t atomCondBroadCast (ATOM_COND *cond)
+{
+	return atomCondWake(cond, TRUE);
 }

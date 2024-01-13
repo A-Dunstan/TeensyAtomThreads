@@ -47,6 +47,17 @@ extern uint8_t atomMutexDelete (ATOM_MUTEX *mutex);
 extern uint8_t atomMutexGet (ATOM_MUTEX *mutex, int32_t timeout);
 extern uint8_t atomMutexPut (ATOM_MUTEX *mutex);
 
+typedef struct atom_cond
+{
+	ATOM_TCB *  suspQ;  /* Queue of threads suspended on this condition */
+} ATOM_COND;
+
+extern uint8_t atomCondCreate (ATOM_COND *cond);
+extern uint8_t atomCondDelete (ATOM_COND *cond);
+extern uint8_t atomCondWait (ATOM_COND *cond, ATOM_MUTEX *mutex, int32_t timeout);
+extern uint8_t atomCondSignal (ATOM_COND *cond);   // wakes one waiting thread
+extern uint8_t atomCondBroadCast(ATOM_COND *cond); // wakes all waiting threads
+
 #ifdef __cplusplus
 }
 #endif
