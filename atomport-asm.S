@@ -3,6 +3,8 @@
   .thumb
   .align 2
 
+  .extern _impure_ptr
+
   .global atomPendSV_ISR
   .thumb_func
   .type atomPendSV_ISR, %function
@@ -38,14 +40,8 @@ atomSVC_ISR:
 3:
   mov r1, r4
   pop {r4,lr}
-  b asmContextSwitch
-  .size atomPendSV_ISR, .-atomPendSV_ISR
-  
-  .extern _impure_ptr
 
-  .thumb_func
-  .type  asmContextSwitch, %function
-asmContextSwitch:
+  @ TASK SWITCH:
   @ r0: ATOM_TCB *new_tcb
   @ r1: ATOM_TCB *old_tcb
 
@@ -62,5 +58,5 @@ asmContextSwitch:
   str r1, [r2]
   bx lr
   .pool
-  .size asmContextSwitch, .-asmContextSwitch
+  .size atomSVC_ISR, .-atomSVC_ISR
 
