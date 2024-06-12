@@ -84,7 +84,7 @@ public:
 
 // switch from mainSP to processSP, allocate new stack for mainSP
 FLASHMEM static void __switchStack(void) {
-__attribute__((aligned(32))) static uint8_t handlerStack[2048+32];
+  static uint8_t handlerStack[2048] __attribute__((aligned(8)));
   uint32_t r;
   void *st = &handlerStack[sizeof(handlerStack)];
   asm volatile (
@@ -108,16 +108,14 @@ extern "C" FLASHMEM void startup_middle_hook(void) {
   alignas(AtomSystickEventResponder) static uint8_t aser[sizeof(AtomSystickEventResponder)];
 
   // stack for idle thread
-  __attribute__((aligned(8))) static uint8_t idleStack[IDLE_STACK_SIZE];
+  static uint8_t idleStack[IDLE_STACK_SIZE] __attribute__((aligned(8)));
 
   // used to restore execution of main thread after it gets activated by the scheduler
   jmp_buf jmp;
   // archThreadContextInit needs temp space to create a context frame for the main thread
-  uint32_t stk[256];
+  uint32_t stk[256] __attribute__((aligned(8)));
 
   __switchStack();
-  // ensure stack gets 8-byte aligned on exception entry
-  SCB_CCR |= 1<<9; // CCR.STKALIGN
 
   if (setjmp(jmp)!=0)
     return;

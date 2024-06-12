@@ -4,11 +4,20 @@
   .align 2
 
   .extern _impure_ptr
+  .extern oldPendSV
+
+  .global atomSVC_ISR
+  .thumb_func
+  .type atomSVR_ISR, %function
+atomSVC_ISR:
+  push {r4,lr}
+  b 1f
+  .size atomSVC_ISR, .-atomSVC_ISR
 
   .global atomPendSV_ISR
   .thumb_func
   .type atomPendSV_ISR, %function
-  @ call the existing PendSV ISR first then do the same as SVC
+  @ call the existing PendSV ISR first then do SVC
 atomPendSV_ISR:
   ldr r0, =oldPendSV
   push {r4,lr}
@@ -16,17 +25,8 @@ atomPendSV_ISR:
   cbz r4, 1f
   bl atomIntEnter
   blx r4
-  mov r0, #0
+  movs r0, #0
   bl atomIntExit
-  b 1f
-  .pool
-  .size atomPendSV_ISR, .-atomPendSV_ISR
-
-  .global atomSVC_ISR
-  .thumb_func
-  .type atomSVR_ISR, %function
-atomSVC_ISR:
-  push {r4,lr}
 1:
   bl atomCurrentContext
   movs r4, r0
@@ -34,12 +34,11 @@ atomSVC_ISR:
   bl atomRunSched
   @ perform context switch only if new TCB is different from current
   cmp r0, r4
-  bne 3f
-2:
-  pop {r4,pc}
-3:
   mov r1, r4
-  pop {r4,lr}
+2:
+  ite ne
+  popne {r4, lr}
+  popeq {r4, pc}
 
   @ TASK SWITCH:
   @ r0: ATOM_TCB *new_tcb
@@ -58,5 +57,5 @@ atomSVC_ISR:
   str r1, [r2]
   bx lr
   .pool
-  .size atomSVC_ISR, .-atomSVC_ISR
+  .size atomPendSV_ISR, .-atomPendSV_ISR
 

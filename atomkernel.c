@@ -233,7 +233,8 @@ void atomSched (uint8_t timer_tick)
     if (atomOSStarted == TRUE)
     {
       uint32_t active_exc = SCB_ICSR & 0x1FF;
-      allow_preempt |= timer_tick;
+      if (timer_tick == TRUE)
+      	allow_preempt |= TRUE;
       if (active_exc == 0)
         asm volatile("SVC #0");
       else if (active_exc != 14) // don't set PENDSV inside PENDSV
@@ -282,7 +283,7 @@ ATOM_TCB* atomRunSched(void) {
     else
     {
         /* Calculate which priority is allowed to be scheduled in */
-        if (allow_preempt == TRUE)
+        if (allow_preempt != FALSE)
         {
             /* Same priority or higher threads can preempt */
             lowest_pri = (int16_t)curr_tcb->priority;
