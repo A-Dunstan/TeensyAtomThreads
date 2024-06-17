@@ -28,7 +28,7 @@
  */
 
 
-/** 
+/**
  * \file
  * Queue library.
  *
@@ -83,13 +83,13 @@
  * call can be made in which case the call will return with a status code
  * indicating that the queue is full. This allows messages to be received
  * by interrupt handlers or threads which you do not wish to block.
- * 
+ *
  * A queue which is no longer required can be deleted using atomQueueDelete().
  * This function automatically wakes up any threads which are waiting on the
  * deleted queue.
  *
  */
- 
+
 
 #include <string.h>
 
@@ -110,8 +110,8 @@ typedef struct queue_timer
 
 /* Forward declarations */
 
-static uint8_t queue_remove (ATOM_QUEUE *qptr, uint8_t* msgptr);
-static uint8_t queue_insert (ATOM_QUEUE *qptr, uint8_t* msgptr);
+static uint8_t queue_remove (ATOM_QUEUE *qptr, void* msgptr);
+static uint8_t queue_insert (ATOM_QUEUE *qptr, const void* msgptr);
 static void atomQueueTimerCallback (POINTER cb_data);
 
 
@@ -142,7 +142,7 @@ static void atomQueueTimerCallback (POINTER cb_data);
  * @retval ATOM_OK Success
  * @retval ATOM_ERR_PARAM Bad parameters
  */
-uint8_t atomQueueCreate (ATOM_QUEUE *qptr, uint8_t *buff_ptr, uint32_t unit_size, uint32_t max_num_msgs)
+uint8_t atomQueueCreate (ATOM_QUEUE *qptr, void *buff_ptr, uint32_t unit_size, uint32_t max_num_msgs)
 {
     uint8_t status;
 
@@ -160,7 +160,7 @@ uint8_t atomQueueCreate (ATOM_QUEUE *qptr, uint8_t *buff_ptr, uint32_t unit_size
     else
     {
        /* Store the queue details */
-        qptr->buff_ptr = buff_ptr;
+        qptr->buff_ptr = (uint8_t*)buff_ptr;
         qptr->unit_size = unit_size;
         qptr->max_num_msgs = max_num_msgs;
 
@@ -333,7 +333,7 @@ uint8_t atomQueueDelete (ATOM_QUEUE *qptr)
  * @retval ATOM_ERR_QUEUE Problem putting the thread on the suspend queue
  * @retval ATOM_ERR_TIMER Problem registering the timeout
  */
-uint8_t atomQueueGet (ATOM_QUEUE *qptr, int32_t timeout, uint8_t *msgptr)
+uint8_t atomQueueGet (ATOM_QUEUE *qptr, int32_t timeout, void *msgptr)
 {
     CRITICAL_STORE;
     uint8_t status;
@@ -539,7 +539,7 @@ uint8_t atomQueueGet (ATOM_QUEUE *qptr, int32_t timeout, uint8_t *msgptr)
  * @retval ATOM_ERR_QUEUE Problem putting the thread on the suspend queue
  * @retval ATOM_ERR_TIMER Problem registering the timeout
  */
-uint8_t atomQueuePut (ATOM_QUEUE *qptr, int32_t timeout, uint8_t *msgptr)
+uint8_t atomQueuePut (ATOM_QUEUE *qptr, int32_t timeout, const void *msgptr)
 {
     CRITICAL_STORE;
     uint8_t status;
@@ -784,7 +784,7 @@ static void atomQueueTimerCallback (POINTER cb_data)
  * @retval ATOM_ERR_QUEUE Problem putting a thread on the ready queue
  * @retval ATOM_ERR_TIMER Problem cancelling a timeout
  */
-static uint8_t queue_remove (ATOM_QUEUE *qptr, uint8_t* msgptr)
+static uint8_t queue_remove (ATOM_QUEUE *qptr, void* msgptr)
 {
     uint8_t status;
     ATOM_TCB *tcb_ptr;
@@ -878,7 +878,7 @@ static uint8_t queue_remove (ATOM_QUEUE *qptr, uint8_t* msgptr)
  * @retval ATOM_ERR_QUEUE Problem putting a thread on the ready queue
  * @retval ATOM_ERR_TIMER Problem cancelling a timeout
  */
-static uint8_t queue_insert (ATOM_QUEUE *qptr, uint8_t* msgptr)
+static uint8_t queue_insert (ATOM_QUEUE *qptr, const void* msgptr)
 {
     uint8_t status;
     ATOM_TCB *tcb_ptr;

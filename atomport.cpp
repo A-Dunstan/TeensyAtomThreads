@@ -103,10 +103,6 @@ FLASHMEM static void __switchStack(void) {
 
 extern "C" FLASHMEM void startup_middle_hook(void) {
   static ATOM_TCB main_tcb;
-  // this is a static instance but not declared as one so placement new can be invoked
-  // (must be initialized before other static classes)
-  alignas(AtomSystickEventResponder) static uint8_t aser[sizeof(AtomSystickEventResponder)];
-
   // stack for idle thread
   static uint8_t idleStack[IDLE_STACK_SIZE] __attribute__((aligned(8)));
 
@@ -120,19 +116,19 @@ extern "C" FLASHMEM void startup_middle_hook(void) {
   if (setjmp(jmp)!=0)
     return;
 
-  if (atomOSInit(idleStack, IDLE_STACK_SIZE, FALSE) != ATOM_OK)
-    return;
+  if (atomOSInit(idleStack, IDLE_STACK_SIZE, FALSE) == ATOM_OK) {
+    if (atomThreadCreate(&main_tcb, 128, longjmpWrap, (uint32_t)&jmp, stk, sizeof(stk), FALSE) == ATOM_OK) {
+      // static instance is at this scope so it gets initialized as soon as execution reaches here,
+      // rather than when global objects are created
+      static AtomSystickEventResponder ticker;
 
-  if (atomThreadCreate(&main_tcb, 128, longjmpWrap, (uint32_t)&jmp, stk, sizeof(stk), FALSE) != ATOM_OK)
-    return;
+      _VectorsRam[11] = atomSVC_ISR;
+      oldPendSV = _VectorsRam[14];
+      _VectorsRam[14] = atomPendSV_ISR;
+      SCB_SHPR2 = 0; // SVCall priority 0
 
-  new(aser) AtomSystickEventResponder();
-
-  _VectorsRam[11] = atomSVC_ISR;
-  oldPendSV = _VectorsRam[14];
-  _VectorsRam[14] = atomPendSV_ISR;
-  SCB_SHPR2 = 0; // SVCall priority 0
-
-  atomOSStart();
+      atomOSStart();
+    }
+  }
 }
 
