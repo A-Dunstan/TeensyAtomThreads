@@ -44,17 +44,19 @@ atomPendSV_ISR:
   @ r0: ATOM_TCB *new_tcb
   @ r1: ATOM_TCB *old_tcb
 
-  mrs r3, PSP
-  ldr r2, = _impure_ptr
-  str r3, [r1], #8      @ store old SP, increment to &priv
-  ldr r3, [r0], #8      @ load new SP, increment to &priv
-  stmia r1!, {r4-r11}   @ store old priv.regs
-  ldmia r0!, {r4-r11}   @ load new priv.regs
-  vstm r1, {d8-d15}     @ store old priv.fregs
-  vldm r0, {d8-d15}     @ load new priv.fregs
-  ldr r1, [r0,#64]      @ load new _impure_ptr
-  msr PSP, r3
-  str r1, [r2]
+  mrs r3, PSP           @ get old SP
+  ldr r2, =_impure_ptr
+  str r3, [r1]          @ save old SP
+  ldr r0, [r0]          @ load new SP
+
+  ldr r1, [r2]          @ get old reent
+  vstmdb r3!, {d8-d15}  @ save old fregs
+  msr PSP, r0           @ set new SP
+  vldmdb r0!, {d8-d15}  @ load old fregs
+  stmdb r3, {r1,r4-r11} @ save reent, old gprs
+  ldmdb r0, {r0,r4-r11} @ load reent, new gprs
+  str r0, [r2]          @ set new reent
+
   bx lr
   .pool
   .size atomPendSV_ISR, .-atomPendSV_ISR
