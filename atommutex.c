@@ -165,120 +165,120 @@ static void atomMutexTimerCallback (POINTER cb_data)
 
 static uint8_t threadSuspend(ATOM_TCB *tcb_ptr, int32_t timeout, ATOM_TCB **suspQ, MUTEX_TIMER *timer_data, ATOM_TIMER *timer_cb)
 {
-	uint8_t status;
+  uint8_t status;
 
-	/* Set suspended status for the current thread */
-	tcb_ptr->suspended = TRUE;
+  /* Set suspended status for the current thread */
+  tcb_ptr->suspended = TRUE;
 
-	/* Track errors */
-	status = ATOM_OK;
+  /* Track errors */
+  status = ATOM_OK;
 
-	/* Register a timer callback if requested */
-	if (timeout>0)
-	{
-		/* Fill out the data needed by the callback to wake us up */
-		timer_data->tcb_ptr = tcb_ptr;
-		timer_data->suspQ = suspQ;
+  /* Register a timer callback if requested */
+  if (timeout>0)
+  {
+    /* Fill out the data needed by the callback to wake us up */
+    timer_data->tcb_ptr = tcb_ptr;
+    timer_data->suspQ = suspQ;
 
-		/* Fill out the timer callback request structure */
-		timer_cb->cb_func = atomMutexTimerCallback;
-		timer_cb->cb_data = (POINTER)timer_data;
-		timer_cb->cb_ticks = timeout;
+    /* Fill out the timer callback request structure */
+    timer_cb->cb_func = atomMutexTimerCallback;
+    timer_cb->cb_data = (POINTER)timer_data;
+    timer_cb->cb_ticks = timeout;
 
-		/**
-		 * Store the timer details in the TCB so that we can
-		 * cancel the timer callback if the mutex is put
-		 * before the timeout occurs.
-		 */
-		tcb_ptr->suspend_timo_cb = timer_cb;
+    /**
+     * Store the timer details in the TCB so that we can
+     * cancel the timer callback if the mutex is put
+     * before the timeout occurs.
+     */
+    tcb_ptr->suspend_timo_cb = timer_cb;
 
-		/* Reigster a callback on timeout */
-		if (atomTimerRegister (timer_cb) != ATOM_OK)
-		{
-			/* Timer registration failed */
-			status = ATOM_ERR_TIMER;
+    /* Reigster a callback on timeout */
+    if (atomTimerRegister (timer_cb) != ATOM_OK)
+    {
+      /* Timer registration failed */
+      status = ATOM_ERR_TIMER;
 
-			/* Clean up and return to the caller */
-			(void)tcbDequeueEntry(suspQ, tcb_ptr);
-			tcb_ptr->suspended = FALSE;
-			tcb_ptr->suspend_timo_cb = NULL;
-		}
-	}
+      /* Clean up and return to the caller */
+      (void)tcbDequeueEntry(suspQ, tcb_ptr);
+      tcb_ptr->suspended = FALSE;
+      tcb_ptr->suspend_timo_cb = NULL;
+    }
+  }
 
-	/* Set no timeout requested */
-	else
-	{
-		/* No need to cancel timeouts on this one */
-		tcb_ptr->suspend_timo_cb = NULL;
-	}
+  /* Set no timeout requested */
+  else
+  {
+    /* No need to cancel timeouts on this one */
+    tcb_ptr->suspend_timo_cb = NULL;
+  }
 
-	return status;
+  return status;
 }
 
 static uint8_t threadResume(ATOM_TCB *tcb_ptr, uint8_t wakeStatus)
 {
-	/* Return status to the waiting thread */
-	tcb_ptr->suspend_wake_status = wakeStatus;
+  /* Return status to the waiting thread */
+  tcb_ptr->suspend_wake_status = wakeStatus;
 
-	/* Put the thread on the ready queue */
-	if (tcbEnqueuePriority(&tcbReadyQ, tcb_ptr) != ATOM_OK)
-	{
-		return ATOM_ERR_QUEUE;
-	}
+  /* Put the thread on the ready queue */
+  if (tcbEnqueuePriority(&tcbReadyQ, tcb_ptr) != ATOM_OK)
+  {
+    return ATOM_ERR_QUEUE;
+  }
 
-	/* If there's a tmeout on this suspension, cancel it */
-	if (tcb_ptr->suspend_timo_cb)
-	{
-		/* Cancel the callback */
-		if (atomTimerCancel (tcb_ptr->suspend_timo_cb) != ATOM_OK)
-		{
-			return ATOM_ERR_TIMER;
-		}
+  /* If there's a tmeout on this suspension, cancel it */
+  if (tcb_ptr->suspend_timo_cb)
+  {
+    /* Cancel the callback */
+    if (atomTimerCancel (tcb_ptr->suspend_timo_cb) != ATOM_OK)
+    {
+      return ATOM_ERR_TIMER;
+    }
 
-		/* Flag as no timeout registered */
-		tcb_ptr->suspend_timo_cb = NULL;
-	}
+    /* Flag as no timeout registered */
+    tcb_ptr->suspend_timo_cb = NULL;
+  }
 
-	return ATOM_OK;
+  return ATOM_OK;
 }
 
 // wakes all threads in a queue with ATOM_ERR_DELETED
 static uint8_t destroyObjectQueue(ATOM_TCB **suspQ)
 {
-	CRITICAL_STORE;
-	uint8_t status;
-	ATOM_TCB *tcb_ptr;
+  CRITICAL_STORE;
+  uint8_t status;
+  ATOM_TCB *tcb_ptr;
 
-	int woken_threads = FALSE;
+  int woken_threads = FALSE;
 
-	/* Default to success status unless errors occur during wakeup */
-	status = ATOM_OK;
+  /* Default to success status unless errors occur during wakeup */
+  status = ATOM_OK;
 
-	CRITICAL_START ();
+  CRITICAL_START ();
 
-	while ((tcb_ptr = tcbDequeueHead(suspQ)) != NULL) {
-		status = threadResume(tcb_ptr, ATOM_ERR_DELETED);
+  while ((tcb_ptr = tcbDequeueHead(suspQ)) != NULL) {
+    status = threadResume(tcb_ptr, ATOM_ERR_DELETED);
 
-		if (status == ATOM_ERR_QUEUE)
-			break;
+    if (status == ATOM_ERR_QUEUE)
+      break;
 
-		woken_threads = TRUE;
-	}
+    woken_threads = TRUE;
+  }
 
-	CRITICAL_END ();
+  CRITICAL_END ();
 
-	/* Call scheduler if any thread were woken up */
-	if (woken_threads == TRUE)
-	{
-		/**
-		 * Only call the scheduler if we are in thread context, otherwise
-		 * it will be called on exiting the ISR by atomIntExit().
-		 */
-		if (atomCurrentContext() != NULL)
-			atomSched (FALSE);
-	}
+  /* Call scheduler if any thread were woken up */
+  if (woken_threads == TRUE)
+  {
+    /**
+     * Only call the scheduler if we are in thread context, otherwise
+     * it will be called on exiting the ISR by atomIntExit().
+     */
+    if (atomCurrentContext() != NULL)
+      atomSched (FALSE);
+  }
 
-	return (status);
+  return (status);
 }
 
 /**
@@ -362,7 +362,7 @@ uint8_t atomMutexDelete (ATOM_MUTEX *mutex)
     }
     else
     {
-		status = destroyObjectQueue(&mutex->suspQ);
+    status = destroyObjectQueue(&mutex->suspQ);
     }
 
     return (status);
@@ -474,7 +474,7 @@ uint8_t atomMutexGet (ATOM_MUTEX *mutex, int32_t timeout)
                 }
                 else
                 {
-					status = threadSuspend(curr_tcb_ptr, timeout, &mutex->suspQ, &timer_data, &timer_cb);
+          status = threadSuspend(curr_tcb_ptr, timeout, &mutex->suspQ, &timer_data, &timer_cb);
 
                     /* Exit critical region */
                     CRITICAL_END ();
@@ -542,9 +542,9 @@ uint8_t atomMutexGet (ATOM_MUTEX *mutex, int32_t timeout)
                     mutex->owner = curr_tcb_ptr;
                     mutex->count=1;
                 } else {
-					/* Increment the count and return to the calling thread */
-					mutex->count++;
-				}
+          /* Increment the count and return to the calling thread */
+          mutex->count++;
+        }
 
                 /* Successful */
                 status = ATOM_OK;
@@ -604,78 +604,78 @@ uint8_t atomMutexPut (ATOM_MUTEX * mutex)
 
         if (curr_tcb_ptr == NULL)
         {
-			status = ATOM_ERR_CONTEXT;
-		}
-		else
+      status = ATOM_ERR_CONTEXT;
+    }
+    else
         {
-			/* Protect access to the mutex object and OS queues */
-			CRITICAL_START ();
+      /* Protect access to the mutex object and OS queues */
+      CRITICAL_START ();
 
-			/* Check if the calling thread owns this mutex */
-			if (mutex->owner != curr_tcb_ptr)
-			{
-				/* Exit critical region */
-				CRITICAL_END ();
+      /* Check if the calling thread owns this mutex */
+      if (mutex->owner != curr_tcb_ptr)
+      {
+        /* Exit critical region */
+        CRITICAL_END ();
 
-				/* Attempt to unlock by non-owning thread */
-				status = ATOM_ERR_OWNERSHIP;
-			}
-			else
-			{
-				/* Lock is owned by this thread, decrement the recursive lock count */
-				mutex->count--;
+        /* Attempt to unlock by non-owning thread */
+        status = ATOM_ERR_OWNERSHIP;
+      }
+      else
+      {
+        /* Lock is owned by this thread, decrement the recursive lock count */
+        mutex->count--;
 
-				/* Once recursive lock count reaches zero, we relinquish ownership */
-				if (mutex->count == 0)
-				{
-					/* Relinquish ownership */
-					mutex->owner = NULL;
+        /* Once recursive lock count reaches zero, we relinquish ownership */
+        if (mutex->count == 0)
+        {
+          /* Relinquish ownership */
+          mutex->owner = NULL;
 
-					/* If any threads are blocking on this mutex, wake them now */
-					if (mutex->suspQ)
-					{
-						/**
-						 * Threads are woken up in priority order, with a FIFO system
-						 * used on same priority threads. We always take the head,
-						 * ordering is taken care of by an ordered list enqueue.
-						 */
-						tcb_ptr = tcbDequeueHead (&mutex->suspQ);
-						status = threadResume(tcb_ptr, ATOM_OK);
-						CRITICAL_END();
+          /* If any threads are blocking on this mutex, wake them now */
+          if (mutex->suspQ)
+          {
+            /**
+             * Threads are woken up in priority order, with a FIFO system
+             * used on same priority threads. We always take the head,
+             * ordering is taken care of by an ordered list enqueue.
+             */
+            tcb_ptr = tcbDequeueHead (&mutex->suspQ);
+            status = threadResume(tcb_ptr, ATOM_OK);
+            CRITICAL_END();
 
-						/* If thread was queued as ready call the task scheduler */
-						if (status != ATOM_ERR_QUEUE)
-							atomSched(FALSE);
-					}
-					else
-					{
-						/**
-						 * Relinquished ownership and no threads waiting.
-						 * Nothing to do.
-						 */
+            /* If thread was queued as ready call the task scheduler */
+            if (status != ATOM_ERR_QUEUE)
+              atomSched(FALSE);
+          }
+          else
+          {
+            /**
+             * Relinquished ownership and no threads waiting.
+             * Nothing to do.
+             */
 
-						/* Exit critical region */
-						CRITICAL_END ();
+            /* Exit critical region */
+            CRITICAL_END ();
 
-						/* Successful */
-						status = ATOM_OK;
-					}
-				}
-				else
-				{
-					/**
-					 * Decremented lock but still retain ownership due to
-					 * recursion. Nothing to do.
-					 */
+            /* Successful */
+            status = ATOM_OK;
+          }
+        }
+        else
+        {
+          /**
+           * Decremented lock but still retain ownership due to
+           * recursion. Nothing to do.
+           */
 
-					/* Exit critical region */
-					CRITICAL_END ();
+          /* Exit critical region */
+          CRITICAL_END ();
 
-					/* Successful */
-					status = ATOM_OK;
-				}
-			}
-		}
+          /* Successful */
+          status = ATOM_OK;
+        }
+      }
+    }
     }
 
     return (status);
@@ -683,161 +683,159 @@ uint8_t atomMutexPut (ATOM_MUTEX * mutex)
 
 uint8_t atomCondCreate (ATOM_COND *cond)
 {
-	if (cond == NULL)
-		return ATOM_ERR_PARAM;
+  if (cond == NULL)
+    return ATOM_ERR_PARAM;
 
-	cond->suspQ = NULL;
+  cond->suspQ = NULL;
 
-	return ATOM_OK;
+  return ATOM_OK;
 }
 
 uint8_t atomCondDelete(ATOM_COND *cond)
 {
-	uint8_t status;
+  uint8_t status;
 
-	if (cond == NULL)
-	{
-		status = ATOM_ERR_PARAM;
-	}
-	else
-	{
-		status = destroyObjectQueue(&cond->suspQ);
-	}
+  if (cond == NULL)
+  {
+    status = ATOM_ERR_PARAM;
+  }
+  else
+  {
+    status = destroyObjectQueue(&cond->suspQ);
+  }
 
-	return (status);
+  return (status);
 }
 
 uint8_t atomCondWait (ATOM_COND *cond, ATOM_MUTEX *lock, int32_t timeout)
 {
-	uint8_t lockstatus, status;
-	CRITICAL_STORE;
-	MUTEX_TIMER timer_data;
-	ATOM_TIMER timer_cb;
-	ATOM_TCB *curr_tcb_ptr, *tcb_ptr;
+  uint8_t lockstatus, status;
+  CRITICAL_STORE;
+  MUTEX_TIMER timer_data;
+  ATOM_TIMER timer_cb;
+  ATOM_TCB *curr_tcb_ptr, *tcb_ptr;
 
-	if (cond == NULL || lock == NULL)
-		return ATOM_ERR_PARAM;
+  if (cond == NULL || lock == NULL)
+    return ATOM_ERR_PARAM;
 
-	curr_tcb_ptr = atomCurrentContext();
+  curr_tcb_ptr = atomCurrentContext();
 
-	// negative timeout or interrupt context are not supported
-	if (timeout < 0 || curr_tcb_ptr == NULL)
-		return ATOM_WOULDBLOCK;
+  // negative timeout or interrupt context are not supported
+  if (timeout < 0 || curr_tcb_ptr == NULL)
+    return ATOM_WOULDBLOCK;
 
-	CRITICAL_START();
+  CRITICAL_START();
 
-	/* Check if the calling thread owns this mutex */
-	if (lock->owner != curr_tcb_ptr)
-	{
-		CRITICAL_END();
-		return ATOM_ERR_OWNERSHIP;
-	}
+  /* Check if the calling thread owns this mutex */
+  if (lock->owner != curr_tcb_ptr)
+  {
+    CRITICAL_END();
+    return ATOM_ERR_OWNERSHIP;
+  }
 
-	if (lock->count != 1)
-	{
-		CRITICAL_END();
-		/* A recursively locked mutex cannot be properly released here */
-		return ATOM_ERR_OVF;
-	}
+  status = ATOM_OK;
 
-	status = ATOM_OK;
+  /* From this point on, if something goes wrong we need
+   * to reacquire the mutex before returning
+   */
 
-	/* From this point on, if something goes wrong we need
-	 * to reacquire the mutex before returning
-	 */
+  /* Relinquish ownership */
+  uint8_t old_count = lock->count;
+  lock->count = 0;
+  lock->owner = NULL;
 
-	/* Relinquish ownership */
-	lock->count = 0;
-	lock->owner = NULL;
+  /* If any threads are blocked on this mutex, mark one ready.
+   * Don't execute a thread switch until this thread has been
+   * suspended on the condition's queue.
+   */
+  tcb_ptr = tcbDequeueHead (&lock->suspQ);
+  if (tcb_ptr != NULL)
+    status = threadResume(tcb_ptr, ATOM_OK);
 
-	/* If any threads are blocked on this mutex, mark one ready.
-	 * Don't execute a thread switch until this thread has been
-	 * suspended on the condition's queue.
-	 */
-	tcb_ptr = tcbDequeueHead (&lock->suspQ);
-	if (tcb_ptr != NULL)
-		status = threadResume(tcb_ptr, ATOM_OK);
+  if (status == ATOM_OK && tcbEnqueuePriority (&cond->suspQ, curr_tcb_ptr) != ATOM_OK)
+    status = ATOM_ERR_QUEUE;
 
-	if (status == ATOM_OK && tcbEnqueuePriority (&cond->suspQ, curr_tcb_ptr) != ATOM_OK)
-		status = ATOM_ERR_QUEUE;
+  if (status == ATOM_OK)
+    status = threadSuspend(curr_tcb_ptr, timeout, &cond->suspQ, &timer_data, &timer_cb);
 
-	if (status == ATOM_OK)
-		status = threadSuspend(curr_tcb_ptr, timeout, &cond->suspQ, &timer_data, &timer_cb);
+  /* Exit critical region */
+  CRITICAL_END ();
 
-	/* Exit critical region */
-	CRITICAL_END ();
+  if (status == ATOM_OK)
+  {
+    /**
+     * Lock has been released, current thread is
+     * blocking on the condition, schedule in a new
+     * one. We already know we are in thread context
+     * so can call the scheduler from here.
+     */
+    atomSched (FALSE);
 
-	if (status == ATOM_OK)
-	{
-		/**
-		 * Lock has been released, current thread is
-		 * blocking on the condition, schedule in a new
-		 * one. We already know we are in thread context
-		 * so can call the scheduler from here.
-		 */
-		atomSched (FALSE);
+    /**
+     * Normal atomCondWake() wakeups will set ATOM_OK status
+     * while timeouts will set ATOM_TIMEOUT and cond
+     * deletions will set ATOM_ERR_DELETED.
+     */
+    status = curr_tcb_ptr->suspend_wake_status;
+  }
 
-		/**
-		 * Normal atomCondWake() wakeups will set ATOM_OK status
-		 * while timeouts will set ATOM_TIMEOUT and cond
-		 * deletions will set ATOM_ERR_DELETED.
-		 */
-		status = curr_tcb_ptr->suspend_wake_status;
-	}
+  /* timeout only applies to waiting for the condition to be signalled,
+   * not reclaiming the mutex afterwards.
+   */
+  lockstatus = atomMutexGet(lock, 0);
+  if (lockstatus == ATOM_OK) {
+    lock->count = old_count;
+  }
+  if (status == ATOM_OK) {
+    status = lockstatus;
+  }
 
-	/* timeout only applies to waiting for the condition to be signalled,
-	 * not reclaiming the mutex afterwards.
-	 */
-	lockstatus = atomMutexGet(lock, 0);
-	if (status == ATOM_OK)
-		status = lockstatus;
-
-	return status;
+  return status;
 }
 
 static uint8_t atomCondWake(ATOM_COND *cond, int wake_all)
 {
-	uint8_t status;
-	CRITICAL_STORE;
-	ATOM_TCB *tcb_ptr;
-	int woken_threads = 0;
+  uint8_t status;
+  CRITICAL_STORE;
+  ATOM_TCB *tcb_ptr;
+  int woken_threads = 0;
 
-	if (cond == NULL)
-		return ATOM_ERR_PARAM;
+  if (cond == NULL)
+    return ATOM_ERR_PARAM;
 
-	status = ATOM_OK;
+  status = ATOM_OK;
 
-	CRITICAL_START();
+  CRITICAL_START();
 
-	do
-	{
-		tcb_ptr = tcbDequeueHead(&cond->suspQ);
-		if (tcb_ptr == NULL)
-			break;
+  do
+  {
+    tcb_ptr = tcbDequeueHead(&cond->suspQ);
+    if (tcb_ptr == NULL)
+      break;
 
-		status = threadResume(tcb_ptr, ATOM_OK);
-		if (status != ATOM_ERR_QUEUE)
-			woken_threads = 1;
+    status = threadResume(tcb_ptr, ATOM_OK);
+    if (status != ATOM_ERR_QUEUE)
+      woken_threads = 1;
 
-	} while (wake_all && status == ATOM_OK);
+  } while (wake_all && status == ATOM_OK);
 
-	CRITICAL_END();
+  CRITICAL_END();
 
-	if (woken_threads)
-	{
-		if (atomCurrentContext())
-			atomSched(FALSE);
-	}
+  if (woken_threads)
+  {
+    if (atomCurrentContext())
+      atomSched(FALSE);
+  }
 
-	return status;
+  return status;
 }
 
 uint8_t atomCondSignal (ATOM_COND *cond)
 {
-	return atomCondWake(cond, FALSE);
+  return atomCondWake(cond, FALSE);
 }
 
 uint8_t atomCondBroadCast (ATOM_COND *cond)
 {
-	return atomCondWake(cond, TRUE);
+  return atomCondWake(cond, TRUE);
 }
