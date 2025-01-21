@@ -474,7 +474,7 @@ uint8_t atomMutexGet (ATOM_MUTEX *mutex, int32_t timeout)
                 }
                 else
                 {
-          status = threadSuspend(curr_tcb_ptr, timeout, &mutex->suspQ, &timer_data, &timer_cb);
+                    status = threadSuspend(curr_tcb_ptr, timeout, &mutex->suspQ, &timer_data, &timer_cb);
 
                     /* Exit critical region */
                     CRITICAL_END ();
@@ -542,9 +542,9 @@ uint8_t atomMutexGet (ATOM_MUTEX *mutex, int32_t timeout)
                     mutex->owner = curr_tcb_ptr;
                     mutex->count=1;
                 } else {
-          /* Increment the count and return to the calling thread */
-          mutex->count++;
-        }
+                  /* Increment the count and return to the calling thread */
+                  mutex->count++;
+                }
 
                 /* Successful */
                 status = ATOM_OK;
@@ -604,78 +604,81 @@ uint8_t atomMutexPut (ATOM_MUTEX * mutex)
 
         if (curr_tcb_ptr == NULL)
         {
-      status = ATOM_ERR_CONTEXT;
-    }
-    else
-        {
-      /* Protect access to the mutex object and OS queues */
-      CRITICAL_START ();
-
-      /* Check if the calling thread owns this mutex */
-      if (mutex->owner != curr_tcb_ptr)
-      {
-        /* Exit critical region */
-        CRITICAL_END ();
-
-        /* Attempt to unlock by non-owning thread */
-        status = ATOM_ERR_OWNERSHIP;
-      }
-      else
-      {
-        /* Lock is owned by this thread, decrement the recursive lock count */
-        mutex->count--;
-
-        /* Once recursive lock count reaches zero, we relinquish ownership */
-        if (mutex->count == 0)
-        {
-          /* Relinquish ownership */
-          mutex->owner = NULL;
-
-          /* If any threads are blocking on this mutex, wake them now */
-          if (mutex->suspQ)
-          {
-            /**
-             * Threads are woken up in priority order, with a FIFO system
-             * used on same priority threads. We always take the head,
-             * ordering is taken care of by an ordered list enqueue.
-             */
-            tcb_ptr = tcbDequeueHead (&mutex->suspQ);
-            status = threadResume(tcb_ptr, ATOM_OK);
-            CRITICAL_END();
-
-            /* If thread was queued as ready call the task scheduler */
-            if (status != ATOM_ERR_QUEUE)
-              atomSched(FALSE);
-          }
-          else
-          {
-            /**
-             * Relinquished ownership and no threads waiting.
-             * Nothing to do.
-             */
-
-            /* Exit critical region */
-            CRITICAL_END ();
-
-            /* Successful */
-            status = ATOM_OK;
-          }
+            status = ATOM_ERR_CONTEXT;
         }
         else
         {
-          /**
-           * Decremented lock but still retain ownership due to
-           * recursion. Nothing to do.
-           */
+            /* Protect access to the mutex object and OS queues */
+            CRITICAL_START ();
 
-          /* Exit critical region */
-          CRITICAL_END ();
+            /* Check if the calling thread owns this mutex */
+            if (mutex->owner != curr_tcb_ptr)
+            {
+                /* Exit critical region */
+                CRITICAL_END ();
 
-          /* Successful */
-          status = ATOM_OK;
+                /* Attempt to unlock by non-owning thread */
+                status = ATOM_ERR_OWNERSHIP;
+            }
+            else
+            {
+                /* Lock is owned by this thread, decrement the recursive lock count */
+                mutex->count--;
+
+                /* Once recursive lock count reaches zero, we relinquish ownership */
+                if (mutex->count == 0)
+                {
+                    /* Relinquish ownership */
+                    mutex->owner = NULL;
+
+                    /* If any threads are blocking on this mutex, wake them now */
+                    if (mutex->suspQ)
+                    {
+                        /**
+                         * Threads are woken up in priority order, with a FIFO system
+                         * used on same priority threads. We always take the head,
+                         * ordering is taken care of by an ordered list enqueue.
+                         */
+                        tcb_ptr = tcbDequeueHead (&mutex->suspQ);
+                        status = threadResume(tcb_ptr, ATOM_OK);
+                        if (status == ATOM_OK) {
+                            mutex->owner = tcb_ptr;
+                        }
+                        CRITICAL_END();
+
+                        /* If thread was queued as ready call the task scheduler */
+                        if (status != ATOM_ERR_QUEUE)
+                            atomSched(FALSE);
+                    }
+                    else
+                    {
+                        /**
+                         * Relinquished ownership and no threads waiting.
+                         * Nothing to do.
+                         */
+
+                        /* Exit critical region */
+                        CRITICAL_END ();
+
+                        /* Successful */
+                        status = ATOM_OK;
+                    }
+                }
+                else
+                {
+                    /**
+                     * Decremented lock but still retain ownership due to
+                     * recursion. Nothing to do.
+                     */
+
+                    /* Exit critical region */
+                    CRITICAL_END ();
+
+                    /* Successful */
+                    status = ATOM_OK;
+                }
+            }
         }
-      }
-    }
     }
 
     return (status);

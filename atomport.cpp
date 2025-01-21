@@ -122,7 +122,7 @@ extern "C" FLASHMEM void startup_middle_hook(void) {
     return;
 
   if (atomOSInit(idleStack, IDLE_STACK_SIZE, FALSE) == ATOM_OK) {
-    if (atomThreadCreate(&main_tcb, 192, longjmpWrap, (uint32_t)&jmp, stk, sizeof(stk), FALSE) == ATOM_OK) {
+    if (atomThreadCreate(&main_tcb, 127, longjmpWrap, (uint32_t)&jmp, stk, sizeof(stk), FALSE) == ATOM_OK) {
       // static instance is at this scope so it gets initialized as soon as execution reaches here,
       // rather than when global objects are created
       static AtomSystickEventResponder ticker;
