@@ -21,7 +21,12 @@ struct __lock __lock___arc4random_mutex;
 
 void __retarget_lock_init(_LOCK_T* l) {
   *l = (_LOCK_T)malloc(sizeof(ATOM_MUTEX));
-  if (*l) atomMutexCreate(*l);
+  if (*l) {
+    if (atomMutexCreate(*l) == ATOM_OK)
+      return;
+    free(*l);
+    *l = NULL;
+  }
 }
 
 void __retarget_lock_close(_LOCK_T l)  {
