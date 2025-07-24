@@ -234,7 +234,7 @@ void atomSched (uint8_t timer_tick)
     {
       uint32_t active_exc = SCB_ICSR & 0x1FF;
       if (timer_tick == TRUE)
-      	allow_preempt |= TRUE;
+        allow_preempt |= TRUE;
       if (active_exc == 0)
         asm volatile("SVC #0");
       else if (active_exc != 14) // don't set PENDSV inside PENDSV
@@ -393,13 +393,13 @@ static void atomThreadSwitch(ATOM_TCB *old_tcb, ATOM_TCB *new_tcb)
  * @retval ATOM_ERR_PARAM Bad parameters
  * @retval ATOM_ERR_QUEUE Error putting the thread on the ready queue
  */
-uint8_t atomThreadCreate (ATOM_TCB *tcb_ptr, uint8_t priority, void (*entry_point)(uint32_t), uint32_t entry_param, void *stack_bottom, uint32_t stack_size, uint8_t stack_check)
+FLASHMEM uint8_t atomThreadCreate (ATOM_TCB *tcb_ptr, uint8_t priority, void (*entry_point)(uint32_t), uint32_t entry_param, void *stack_bottom, uint32_t stack_size, uint8_t stack_check)
 {
     CRITICAL_STORE;
     uint8_t status;
     uint8_t *stack_top;
 #ifdef ATOM_STACK_CHECKING
-	int32_t count;
+  int32_t count;
 #endif
 
     if ((tcb_ptr == NULL) || (entry_point == NULL) || (stack_bottom == NULL)
@@ -453,7 +453,7 @@ uint8_t atomThreadCreate (ATOM_TCB *tcb_ptr, uint8_t priority, void (*entry_poin
              * calls to atomThreadStackCheck() to get an indication of how
              * much stack has been used during runtime.
              */
-		    count = (int32_t)stack_size;
+        count = (int32_t)stack_size;
             while (count > 0)
             {
                 /* Initialise all stack bytes from top down to 0x5A */
@@ -682,7 +682,7 @@ ATOM_TCB *atomCurrentContext (void)
  * @retval ATOM_OK Success
  * @retval ATOM_ERROR Initialisation error
  */
-uint8_t atomOSInit (void *idle_thread_stack_bottom, uint32_t idle_thread_stack_size, uint8_t idle_thread_stack_check)
+FLASHMEM uint8_t atomOSInit (void *idle_thread_stack_bottom, uint32_t idle_thread_stack_size, uint8_t idle_thread_stack_check)
 {
     uint8_t status;
 
@@ -698,7 +698,7 @@ uint8_t atomOSInit (void *idle_thread_stack_bottom, uint32_t idle_thread_stack_s
                  0,
                  idle_thread_stack_bottom,
                  idle_thread_stack_size,
-				 idle_thread_stack_check);
+         idle_thread_stack_check);
 
     /* Return status */
     return (status);
@@ -720,7 +720,7 @@ uint8_t atomOSInit (void *idle_thread_stack_bottom, uint32_t idle_thread_stack_s
  *
  * @return None
  */
-void atomOSStart (void)
+FLASHMEM void atomOSStart (void)
 {
     ATOM_TCB *new_tcb;
 

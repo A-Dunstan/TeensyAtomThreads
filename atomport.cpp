@@ -71,14 +71,8 @@ class AtomSystickEventResponder : EventResponder
 private:
   MillisTimer Timer;
 public:
-  AtomSystickEventResponder() {
-    // call attachInterrupt to make sure the correct systick ISR gets installed (and PendSV priority is reduced)
-    // no callback function required since triggerEvent() is overridden
-    attachInterrupt(NULL);
-
-    // trigger event every X milliseconds to match SYSTEM_TICKS_PER_SEC (typically 10)
-    Timer.beginRepeating(1000/SYSTEM_TICKS_PER_SEC, *this);
-  }
+  AtomSystickEventResponder();
+  ~AtomSystickEventResponder();
 
   void triggerEvent(int, void*) {
     atomIntEnter();
@@ -86,6 +80,18 @@ public:
     atomIntExit(TRUE);
   }
 };
+
+FLASHMEM AtomSystickEventResponder::AtomSystickEventResponder() {
+  // call attachInterrupt to make sure the correct systick ISR gets installed (and PendSV priority is reduced)
+  // no callback function required since triggerEvent() is overridden
+  attachInterrupt(NULL);
+
+  // trigger event every X milliseconds to match SYSTEM_TICKS_PER_SEC (typically 10)
+  Timer.beginRepeating(1000/SYSTEM_TICKS_PER_SEC, *this);
+}
+
+FLASHMEM AtomSystickEventResponder::~AtomSystickEventResponder() {}
+
 
 // switch from mainSP to processSP, allocate new stack for mainSP
 FLASHMEM static void __switchStack(void) {
