@@ -38,9 +38,11 @@ typedef struct atom_sem
 {
     ATOM_TCB *  suspQ;  /* Queue of threads suspended on this semaphore */
     uint8_t     count;  /* Semaphore count */
+    uint8_t     limit;  /* Maximum count */
 } ATOM_SEM;
 
 extern uint8_t atomSemCreate (ATOM_SEM *sem, uint8_t initial_count);
+extern uint8_t atomSemCreateLimit(ATOM_SEM *sem, uint8_t initial_count, uint8_t max_count);
 extern uint8_t atomSemDelete (ATOM_SEM *sem);
 extern uint8_t atomSemGet (ATOM_SEM *sem, int32_t timeout);
 extern uint8_t atomSemPut (ATOM_SEM *sem);

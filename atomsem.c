@@ -28,7 +28,7 @@
  */
 
 
-/** 
+/**
  * \file
  * Semaphore library.
  *
@@ -72,7 +72,7 @@
  * a call is made to atomSemPut() while threads are blocking on a zero-count
  * semaphore, the highest priority thread is woken. Where multiple threads of
  * the same priority are blocking, they are woken in the order in which the
- * threads started blocking. 
+ * threads started blocking.
  *
  * A semaphore which is no longer required can be deleted using
  * atomSemDelete(). This function automatically wakes up any threads which are
@@ -108,9 +108,9 @@ static void atomSemTimerCallback (POINTER cb_data);
 
 
 /**
- * \b atomSemCreate
+ * \b atomSemCreateLimit
  *
- * Initialises a semaphore object.
+ * Initialises a semaphore object with a maximum limit.
  *
  * Must be called before calling any other semaphore library routines on a
  * semaphore. Objects can be deleted later using atomSemDelete().
@@ -121,11 +121,12 @@ static void atomSemTimerCallback (POINTER cb_data);
  *
  * @param[in] sem Pointer to semaphore object
  * @param[in] initial_count Initial count value
+ * @param[in] max_count Maximum count value
  *
  * @retval ATOM_OK Success
  * @retval ATOM_ERR_PARAM Bad parameters
  */
-uint8_t atomSemCreate (ATOM_SEM *sem, uint8_t initial_count)
+uint8_t atomSemCreateLimit (ATOM_SEM *sem, uint8_t initial_count, uint8_t max_count)
 {
     uint8_t status;
 
@@ -135,10 +136,23 @@ uint8_t atomSemCreate (ATOM_SEM *sem, uint8_t initial_count)
         /* Bad semaphore pointer */
         status = ATOM_ERR_PARAM;
     }
+    else if (max_count == 0)
+    {
+        /* Max count must be at least non-zero */
+        status = ATOM_ERR_PARAM;
+    }
+    else if (initial_count > max_count)
+    {
+        /* Initial count cannot be greater than max */
+        status = ATOM_ERR_PARAM;
+    }
     else
     {
         /* Set the initial count */
         sem->count = initial_count;
+
+        /* Set the maximum count */
+        sem->limit = max_count;
 
         /* Initialise the suspended threads queue */
         sem->suspQ = NULL;
@@ -150,6 +164,21 @@ uint8_t atomSemCreate (ATOM_SEM *sem, uint8_t initial_count)
     return (status);
 }
 
+/**
+ * \b atomSemCreate
+ *
+ * Old initialization function. Equivalent to atomSemCreateLimit() with a max_count of 255.
+ *
+ * @param[in] sem Pointer to semaphore object
+ * @param[in] initial_count Initial count value
+ *
+ * @retval ATOM_OK Success
+ * @retval ATOM_ERR_PARAM Bad parameters
+ */
+uint8_t atomSemCreate(ATOM_SEM *sem, uint8_t initial_count)
+{
+  return atomSemCreateLimit(sem, initial_count, 255);
+}
 
 /**
  * \b atomSemDelete
@@ -566,7 +595,7 @@ uint8_t atomSemPut (ATOM_SEM * sem)
         else
         {
             /* Check for count overflow */
-            if (sem->count == 255)
+            if (sem->count == sem->limit)
             {
                 /* Don't increment, just return error status */
                 status = ATOM_ERR_OVF;
@@ -612,6 +641,11 @@ uint8_t atomSemResetCount (ATOM_SEM *sem, uint8_t count)
     if (sem == NULL)
     {
         /* Bad semaphore pointer */
+        status = ATOM_ERR_PARAM;
+    }
+    else if (count > sem->limit)
+    {
+        /* Bad value, exceeds maximum */
         status = ATOM_ERR_PARAM;
     }
     else
