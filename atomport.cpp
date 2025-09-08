@@ -72,7 +72,6 @@ private:
   MillisTimer Timer;
 public:
   AtomSystickEventResponder();
-  ~AtomSystickEventResponder();
 
   void triggerEvent(int, void*) {
     atomIntEnter();
@@ -89,9 +88,6 @@ FLASHMEM AtomSystickEventResponder::AtomSystickEventResponder() {
   // trigger event every X milliseconds to match SYSTEM_TICKS_PER_SEC (typically 10)
   Timer.beginRepeating(1000/SYSTEM_TICKS_PER_SEC, *this);
 }
-
-FLASHMEM AtomSystickEventResponder::~AtomSystickEventResponder() {}
-
 
 // switch from mainSP to processSP, allocate new stack for mainSP
 FLASHMEM static void __switchStack(void) {
@@ -129,14 +125,28 @@ extern "C" FLASHMEM void startup_middle_hook(void) {
 
   if (atomOSInit(idleStack, IDLE_STACK_SIZE, FALSE) == ATOM_OK) {
     if (atomThreadCreate(&main_tcb, 127, longjmpWrap, (uint32_t)&jmp, stk, sizeof(stk), FALSE) == ATOM_OK) {
-      // static instance is at this scope so it gets initialized as soon as execution reaches here,
-      // rather than when global objects are created
-      static AtomSystickEventResponder ticker;
+      // this is a static instance but not declared as one so placement new can be invoked
+      // (should be initialized before other static classes)
+      alignas(AtomSystickEventResponder) static uint8_t aser[sizeof(AtomSystickEventResponder)];
+
+      new(aser) AtomSystickEventResponder();
 
       _VectorsRam[11] = atomSVC_ISR;
       oldPendSV = _VectorsRam[14];
       _VectorsRam[14] = atomPendSV_ISR;
       SCB_SHPR2 = 0; // SVCall priority 0
+
+      // this is required to keep systick running during WFI (which the idle thread uses)
+#if 1
+      // keep memory powered during sleep
+      CCM_CGPR |= CCM_CGPR_INT_MEM_CLK_LPM;
+      // keep cpu clock on in wait mode (required for systick to trigger wake-up)
+      CCM_CLPCR &= ~(CCM_CLPCR_ARM_CLK_DIS_ON_LPM | CCM_CLPCR_LPM(3));
+      // set SoC low power mode to wait mode
+      CCM_CLPCR |= CCM_CLPCR_LPM(1);
+      // ensure all config is done before executing WFI
+      asm volatile("dsb");
+#endif
 
       atomOSStart();
     }

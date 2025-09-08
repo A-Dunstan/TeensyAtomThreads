@@ -775,17 +775,6 @@ static void atomIdleThread (uint32_t param)
     /* Compiler warning  */
     param = param;
 
-#if 1
-    // keep memory powered during sleep
-    CCM_CGPR |= CCM_CGPR_INT_MEM_CLK_LPM;
-    // keep cpu clock on in wait mode (required for systick to trigger wake-up)
-    CCM_CLPCR &= ~(CCM_CLPCR_ARM_CLK_DIS_ON_LPM | CCM_CLPCR_LPM(3));
-    // set SoC low power mode to wait mode
-    CCM_CLPCR |= CCM_CLPCR_LPM(1);
-    // ensure all config is done before executing WFI
-    asm volatile("dsb");
-#endif
-
     /* Loop forever */
     while (1)
     {
