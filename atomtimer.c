@@ -324,6 +324,8 @@ void atomTimerTick (void)
  * @retval ATOM_ERR_PARAM Bad parameter (ticks must be non-zero)
  * @retval ATOM_ERR_CONTEXT Not called from thread context
  */
+ #pragma GCC diagnostic push
+ #pragma GCC diagnostic ignored "-Wdangling-pointer"
 uint8_t atomTimerDelay (uint32_t ticks)
 {
     ATOM_TCB *curr_tcb_ptr;
@@ -395,6 +397,7 @@ uint8_t atomTimerDelay (uint32_t ticks)
 
     return (status);
 }
+#pragma GCC diagnostic pop
 
 
 /**
