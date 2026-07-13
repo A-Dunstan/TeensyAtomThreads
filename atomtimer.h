@@ -59,6 +59,7 @@ typedef struct atom_timer
 extern uint8_t atomTimerRegister (ATOM_TIMER *timer_ptr);
 extern uint8_t atomTimerCancel (ATOM_TIMER *timer_ptr);
 extern uint8_t atomTimerDelay (uint32_t ticks);
+extern uint8_t atomTimerDelayms(uint32_t ms);
 extern uint32_t atomTimeGet (void);
 extern void atomTimeSet (uint32_t new_time);
 

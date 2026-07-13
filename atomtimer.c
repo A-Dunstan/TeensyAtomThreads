@@ -305,6 +305,11 @@ void atomTimerTick (void)
     }
 }
 
+uint8_t atomTimerDelayms(uint32_t ms) {
+    ms = (ms * SYSTEM_TICKS_PER_SEC) / 1000;
+    if (ms == 0) ms = 1;
+    return atomTimerDelay(ms);
+}
 
 /**
  * \b atomTimerDelay
