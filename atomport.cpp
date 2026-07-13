@@ -8,6 +8,7 @@
 #define IDLE_STACK_SIZE 256
 
 void (*oldPendSV)();
+uint32_t svc_tick;
 
 extern "C" {
 
@@ -47,6 +48,7 @@ FLASHMEM void archThreadContextInit (ATOM_TCB *tcb_ptr, void *stack_top, void (*
   frame->fpscr = SCB_FPDSCR; // default floating point controls
   frame->nv.reent = &tcb_ptr->reent;
   tcb_ptr->sp_save_ptr = &frame->r0;
+  tcb_ptr->ticks = 0;
 
   _REENT_INIT_PTR(&tcb_ptr->reent);
 }
@@ -56,7 +58,20 @@ FLASHMEM void archFirstThreadRestore(ATOM_TCB *new_tcb_ptr) {
   // first thread uses existing reent
   _reclaim_reent(&new_tcb_ptr->reent);
 
+  svc_tick = ARM_DWT_CYCCNT;
   new_tcb_ptr->entry_point(new_tcb_ptr->entry_param);
+}
+
+uint64_t archThreadTicks(ATOM_TCB *tcb_ptr) {
+  ATOM_TCB *current = atomCurrentContext();
+
+  if (current == NULL)
+    return 0;
+
+  if (tcb_ptr != current && tcb_ptr != NULL)
+    return tcb_ptr->ticks;
+
+  return current->ticks + (uint32_t)(ARM_DWT_CYCCNT - svc_tick);
 }
 
 FLASHMEM static void longjmpWrap(uint32_t arg) {

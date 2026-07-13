@@ -5,6 +5,8 @@
 
   .extern _impure_ptr
   .extern oldPendSV
+  .extern svc_tick
+  .equ ARM_DWT_CYCCNT, 0xE0001004
 
   .global atomSVC_ISR
   .thumb_func
@@ -45,15 +47,28 @@ atomPendSV_ISR:
   @ r1: ATOM_TCB *old_tcb
 
   mrs r3, PSP           @ get old SP
+  mov r12,r1            @ save old_tcb
   ldr r2, =_impure_ptr
-  str r3, [r1]          @ save old SP
   ldr r0, [r0]          @ load new SP
+  str r3, [r1]          @ save old SP
 
   ldr r1, [r2]          @ get old reent
   vstmdb r3!, {d8-d15}  @ save old fregs
   msr PSP, r0           @ set new SP
   vldmdb r0!, {d8-d15}  @ load old fregs
   stmdb r3, {r1,r4-r11} @ save reent, old gprs
+
+  ldr r1, =ARM_DWT_CYCCNT
+  ldr r3, =svc_tick
+  ldr r1, [r1]          @ read cycle count
+  ldr r6, [r3]          @ load previous svc_tick
+  ldrd r4,r5,[r12,#8]   @ load old thread cycles
+  sub r6, r1, r6        @ r6 = current cycles - old cycles
+  str r1, [r3]          @ update svc_tick
+  adds r4, r6           @ add low word
+  adc  r5, #0           @ carry to upper word
+  strd r4,r5,[r12,#8]   @ store old thread cycles
+  
   ldmdb r0, {r0,r4-r11} @ load reent, new gprs
   str r0, [r2]          @ set new reent
 

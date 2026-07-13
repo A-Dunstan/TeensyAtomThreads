@@ -49,6 +49,7 @@ typedef struct atom_tcb
      * out the architecture port can save its stack pointer here.
      */
     POINTER sp_save_ptr;
+    uint64_t ticks;
 
     /* Thread's port specific private data */
 #if defined(THREAD_PORT_PRIV)
@@ -132,6 +133,8 @@ extern uint8_t atomThreadStackCheck (ATOM_TCB *tcb_ptr, uint32_t *used_bytes, ui
 
 extern void archThreadContextInit (ATOM_TCB *tcb_ptr, void *stack_top, void (*entry_point)(uint32_t), uint32_t entry_param);
 extern void archFirstThreadRestore(ATOM_TCB *new_tcb_ptr);
+extern uint64_t archThreadTicks(ATOM_TCB *tcb_ptr);
+extern uint64_t idleThreadTicks(void);
 
 extern void atomTimerTick (void);
 
