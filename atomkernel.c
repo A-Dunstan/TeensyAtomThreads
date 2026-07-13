@@ -145,6 +145,8 @@
 
 
 #include "atom.h"
+#include "atommutex.h"
+#include "atomsem.h"
 #include <imxrt.h>
 #include <Arduino.h>
 
@@ -196,7 +198,7 @@ static int atomIntCnt = 0;
 
 /* Forward declarations */
 static void atomThreadSwitch(ATOM_TCB *old_tcb, ATOM_TCB *new_tcb);
-static void atomIdleThread (uint32_t data);
+static void atomIdleThread (thread_param_t data);
 
 
 /**
@@ -255,7 +257,7 @@ ATOM_TCB* atomRunSched(void) {
      * terminated (run to completion), then unconditionally dequeue
      * the next thread for execution.
      */
-    if ((curr_tcb->suspended == TRUE) || (curr_tcb->terminated == TRUE))
+    if (curr_tcb->flags & TCB_STATE_SUSPENDED)
     {
         /**
          * Dequeue the next ready to run thread. There will always be
@@ -349,7 +351,7 @@ static void atomThreadSwitch(ATOM_TCB *old_tcb, ATOM_TCB *new_tcb)
      * new thread is now ready to run so clear its suspend status in
      * preparation for it waking up.
      */
-    new_tcb->suspended = FALSE;
+    new_tcb->flags &= ~TCB_STATE_SUSPENDED;
 
     /**
      * Check if the new thread is actually the current one, in which
@@ -393,7 +395,7 @@ static void atomThreadSwitch(ATOM_TCB *old_tcb, ATOM_TCB *new_tcb)
  * @retval ATOM_ERR_PARAM Bad parameters
  * @retval ATOM_ERR_QUEUE Error putting the thread on the ready queue
  */
-FLASHMEM uint8_t atomThreadCreate (ATOM_TCB *tcb_ptr, uint8_t priority, void (*entry_point)(uint32_t), uint32_t entry_param, void *stack_bottom, uint32_t stack_size, uint8_t stack_check)
+FLASHMEM uint8_t atomThreadCreate (ATOM_TCB *tcb_ptr, uint8_t priority, thread_func_t entry_point, thread_param_t entry_param, void *stack_bottom, uint32_t stack_size, uint8_t stack_check)
 {
     CRITICAL_STORE;
     uint8_t status;
@@ -411,28 +413,30 @@ FLASHMEM uint8_t atomThreadCreate (ATOM_TCB *tcb_ptr, uint8_t priority, void (*e
     else
     {
 
-        /* Set up the TCB initial values */
-        tcb_ptr->suspended = FALSE;
-        tcb_ptr->terminated = FALSE;
-        tcb_ptr->priority = priority;
-        tcb_ptr->prev_tcb = NULL;
-        tcb_ptr->next_tcb = NULL;
-        tcb_ptr->suspend_timo_cb = NULL;
-
-        /**
-         * Store the thread entry point and parameter in the TCB. This may
-         * not be necessary for all architecture ports if they put all of
-         * this information in the initial thread stack.
-         */
-        tcb_ptr->entry_point = entry_point;
-        tcb_ptr->entry_param = entry_param;
-
         /**
          * Calculate a pointer to the topmost stack entry, suitably aligned
          * for the architecture. This may discard the top few bytes if the
          * stack size is not a multiple of the stack entry/alignment size.
          */
-        stack_top = (uint8_t *)stack_bottom + (stack_size & ~(STACK_ALIGN_SIZE - 1)) - STACK_ALIGN_SIZE;
+        stack_top = (uint8_t *)(((uint32_t)stack_bottom + stack_size) & ~3);
+        tcb_ptr->owned = (ATOM_MUTEX*)stack_top - 1;
+        tcb_ptr->detach = (ATOM_SEM*)(tcb_ptr->owned) - 1;
+        stack_top = (uint8_t*)((uint32_t)(tcb_ptr->detach) & ~STACK_ALIGN_SIZE);
+
+        if (stack_top <= (uint8_t*)stack_bottom) return ATOM_ERR_PARAM;
+
+        /* Set up the TCB initial values */
+        tcb_ptr->flags = TCB_STATE_ATTACHED;
+        tcb_ptr->priority = priority;
+        tcb_ptr->prev_tcb = NULL;
+        tcb_ptr->next_tcb = NULL;
+        tcb_ptr->suspend_timo_cb = NULL;
+
+        tcb_ptr->owned->suspQ = NULL;
+        tcb_ptr->owned->owner = tcb_ptr;
+        tcb_ptr->owned->count = 1;
+
+        atomSemCreate(tcb_ptr->detach, 0);
 
         /**
          * Additional processing only required if stack-checking is
@@ -507,6 +511,28 @@ FLASHMEM uint8_t atomThreadCreate (ATOM_TCB *tcb_ptr, uint8_t priority, void (*e
     }
 
     return (status);
+}
+
+uint8_t atomThreadJoin (ATOM_TCB *tcb_ptr, void **return_value, int32_t timeout)
+{
+  uint8_t status;
+
+  // invalid thread context or thread was already detached
+  if (tcb_ptr == NULL || (tcb_ptr->flags & (TCB_STATE_ATTACHED|TCB_STATE_TERMINATED)) != TCB_STATE_ATTACHED)
+    status = ATOM_ERR_PARAM;
+  else
+    status = atomMutexGet(tcb_ptr->owned, timeout);
+
+  if (status == ATOM_OK)
+  {
+    if (return_value)
+      *return_value = tcb_ptr->return_value;
+    tcb_ptr->flags &= ~TCB_STATE_ATTACHED;
+    // now let it finish
+    status = atomSemPut(tcb_ptr->detach);
+  }
+
+  return status;
 }
 
 
@@ -770,7 +796,7 @@ FLASHMEM void atomOSStart (void)
  *
  * @return None
  */
-static void atomIdleThread (uint32_t param)
+static void atomIdleThread (thread_param_t param)
 {
     /* Compiler warning  */
     param = param;

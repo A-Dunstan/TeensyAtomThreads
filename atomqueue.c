@@ -370,7 +370,7 @@ uint8_t atomQueueGet (ATOM_QUEUE *qptr, int32_t timeout, void *msgptr)
                     if (tcbEnqueuePriority (&qptr->getSuspQ, curr_tcb_ptr) == ATOM_OK)
                     {
                         /* Set suspended status for the current thread */
-                        curr_tcb_ptr->suspended = TRUE;
+                        curr_tcb_ptr->flags |= TCB_STATE_SUSPENDED;
 
                         /* Track errors */
                         status = ATOM_OK;
@@ -406,7 +406,7 @@ uint8_t atomQueueGet (ATOM_QUEUE *qptr, int32_t timeout, void *msgptr)
 
                                 /* Clean up and return to the caller */
                                 (void)tcbDequeueEntry (&qptr->getSuspQ, curr_tcb_ptr);
-                                curr_tcb_ptr->suspended = FALSE;
+                                curr_tcb_ptr->flags &= ~TCB_STATE_SUSPENDED;
                                 curr_tcb_ptr->suspend_timo_cb = NULL;
                             }
                         }
@@ -576,7 +576,7 @@ uint8_t atomQueuePut (ATOM_QUEUE *qptr, int32_t timeout, const void *msgptr)
                     if (tcbEnqueuePriority (&qptr->putSuspQ, curr_tcb_ptr) == ATOM_OK)
                     {
                         /* Set suspended status for the current thread */
-                        curr_tcb_ptr->suspended = TRUE;
+                        curr_tcb_ptr->flags |= TCB_STATE_SUSPENDED;
 
                         /* Track errors */
                         status = ATOM_OK;
@@ -614,7 +614,7 @@ uint8_t atomQueuePut (ATOM_QUEUE *qptr, int32_t timeout, const void *msgptr)
 
                                 /* Clean up and return to the caller */
                                 (void)tcbDequeueEntry (&qptr->putSuspQ, curr_tcb_ptr);
-                                curr_tcb_ptr->suspended = FALSE;
+                                curr_tcb_ptr->flags &= ~TCB_STATE_SUSPENDED;
                                 curr_tcb_ptr->suspend_timo_cb = NULL;
                             }
                         }

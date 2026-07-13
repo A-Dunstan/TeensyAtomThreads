@@ -168,7 +168,7 @@ static uint8_t threadSuspend(ATOM_TCB *tcb_ptr, int32_t timeout, ATOM_TCB **susp
   uint8_t status;
 
   /* Set suspended status for the current thread */
-  tcb_ptr->suspended = TRUE;
+  tcb_ptr->flags |= TCB_STATE_SUSPENDED;
 
   /* Track errors */
   status = ATOM_OK;
@@ -200,7 +200,7 @@ static uint8_t threadSuspend(ATOM_TCB *tcb_ptr, int32_t timeout, ATOM_TCB **susp
 
       /* Clean up and return to the caller */
       (void)tcbDequeueEntry(suspQ, tcb_ptr);
-      tcb_ptr->suspended = FALSE;
+      tcb_ptr->flags &= ~TCB_STATE_SUSPENDED;
       tcb_ptr->suspend_timo_cb = NULL;
     }
   }

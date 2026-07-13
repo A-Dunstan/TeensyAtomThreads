@@ -1,4 +1,4 @@
-#include "atom.h"
+#include "TeensyAtomThreads.h"
 #include <imxrt.h>
 #include <EventResponder.h>
 #include <setjmp.h>
@@ -11,6 +11,33 @@ void (*oldPendSV)();
 uint32_t svc_tick;
 
 extern "C" {
+
+FLASHMEM void atomThreadTerminate(void* ret) {
+  ATOM_TCB* tcb = atomCurrentContext();
+  if (tcb != NULL) {
+    tcb->priority = 0; // uninterruptible
+
+    if (tcb->flags & TCB_STATE_ATTACHED) {
+      tcb->return_value = ret;
+      // signal that we've finished, return value is valid
+      atomMutexPut(tcb->owned);
+      // wait (infinitely) for a thread to join to us
+      atomSemGet(tcb->detach, 0);
+      // release any other threads attempting to join this one
+      atomMutexDelete(tcb->owned);
+      // cleanup
+      atomSemDelete(tcb->detach);
+    }
+
+    _reclaim_reent(&tcb->reent);
+    // mark this thread as ended and switch to a new one
+    // this thread is not in any queues so it will never run again
+    tcb->flags |= TCB_STATE_SUSPENDED|TCB_STATE_TERMINATED;
+    atomSched(FALSE); // should never return
+  }
+
+  asm volatile("wfi");
+}
 
 extern void atomPendSV_ISR(void);
 extern void atomSVC_ISR(void);
@@ -35,15 +62,15 @@ typedef struct __attribute__((packed)) {
   /* 0xCC total size */
 } ctxt_frame;
 
-FLASHMEM void archThreadContextInit (ATOM_TCB *tcb_ptr, void *stack_top, void (*entry_point)(uint32_t), uint32_t entry_param) {
+FLASHMEM void archThreadContextInit (ATOM_TCB *tcb_ptr, void *stack_top, thread_func_t entry_point, thread_param_t entry_param) {
   // set up an exception frame
   ctxt_frame* frame = (ctxt_frame*)stack_top - 1;
   memset(frame, 0, sizeof(*frame));
   memset(&tcb_ptr->reent, 0, sizeof(tcb_ptr->reent));
 
   frame->ret_addr = (uint32_t)entry_point;
-  frame->r0 = entry_param;
-  frame->lr = 0xFFFFFFFF; // invalid EXC_RETURN value, entry point must not return
+  frame->r0 = (uint32_t)entry_param;
+  frame->lr = (uint32_t)atomThreadTerminate;
   frame->XPSR = 1<<24; // EPSR.T must be set, CPU supports thumb mode only!
   frame->fpscr = SCB_FPDSCR; // default floating point controls
   frame->nv.reent = &tcb_ptr->reent;
@@ -57,9 +84,11 @@ FLASHMEM void archThreadContextInit (ATOM_TCB *tcb_ptr, void *stack_top, void (*
 FLASHMEM void archFirstThreadRestore(ATOM_TCB *new_tcb_ptr) {
   // first thread uses existing reent
   _reclaim_reent(&new_tcb_ptr->reent);
+  new_tcb_ptr->flags = 0; // detached
 
   svc_tick = ARM_DWT_CYCCNT;
-  new_tcb_ptr->entry_point(new_tcb_ptr->entry_param);
+  jmp_buf* jmp = *(jmp_buf**)(new_tcb_ptr->sp_save_ptr);
+  longjmp(*jmp, 1);
 }
 
 uint64_t archThreadTicks(ATOM_TCB *tcb_ptr) {
@@ -72,11 +101,6 @@ uint64_t archThreadTicks(ATOM_TCB *tcb_ptr) {
     return tcb_ptr->ticks;
 
   return current->ticks + (uint32_t)(ARM_DWT_CYCCNT - svc_tick);
-}
-
-FLASHMEM static void longjmpWrap(uint32_t arg) {
-  jmp_buf* jmp = (jmp_buf*)arg;
-  longjmp(*jmp, 1);
 }
 
 }
@@ -139,7 +163,7 @@ extern "C" FLASHMEM void startup_middle_hook(void) {
     return;
 
   if (atomOSInit(idleStack, IDLE_STACK_SIZE, FALSE) == ATOM_OK) {
-    if (atomThreadCreate(&main_tcb, 127, longjmpWrap, (uint32_t)&jmp, stk, sizeof(stk), FALSE) == ATOM_OK) {
+    if (atomThreadCreate(&main_tcb, 127, (thread_func_t)1, &jmp, stk, sizeof(stk), FALSE) == ATOM_OK) {
       // this is a static instance but not declared as one so placement new can be invoked
       // (should be initialized before other static classes)
       alignas(AtomSystickEventResponder) static uint8_t aser[sizeof(AtomSystickEventResponder)];

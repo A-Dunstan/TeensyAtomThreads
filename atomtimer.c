@@ -358,7 +358,7 @@ uint8_t atomTimerDelay (uint32_t ticks)
         CRITICAL_START ();
 
         /* Set suspended status for the current thread */
-        curr_tcb_ptr->suspended = TRUE;
+        curr_tcb_ptr->flags |= TCB_STATE_SUSPENDED;
 
         /* Register the timer callback */
 

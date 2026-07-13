@@ -384,7 +384,7 @@ uint8_t atomSemGet (ATOM_SEM *sem, int32_t timeout)
                     else
                     {
                         /* Set suspended status for the current thread */
-                        curr_tcb_ptr->suspended = TRUE;
+                        curr_tcb_ptr->flags |= TCB_STATE_SUSPENDED;
 
                         /* Track errors */
                         status = ATOM_OK;
@@ -416,7 +416,7 @@ uint8_t atomSemGet (ATOM_SEM *sem, int32_t timeout)
 
                                 /* Clean up and return to the caller */
                                 (void)tcbDequeueEntry (&sem->suspQ, curr_tcb_ptr);
-                                curr_tcb_ptr->suspended = FALSE;
+                                curr_tcb_ptr->flags &= ~TCB_STATE_SUSPENDED;
                                 curr_tcb_ptr->suspend_timo_cb = NULL;
                             }
                         }
