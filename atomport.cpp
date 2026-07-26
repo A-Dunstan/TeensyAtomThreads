@@ -80,7 +80,6 @@ FLASHMEM void archThreadContextInit (ATOM_TCB *tcb_ptr, void *stack_top, thread_
   _REENT_INIT_PTR(&tcb_ptr->reent);
 }
 
-// assume this thread is already running (e.g. entry_point is a redirect function such as longjmp)
 FLASHMEM void archFirstThreadRestore(ATOM_TCB *new_tcb_ptr) {
   // first thread uses existing reent
   _reclaim_reent(&new_tcb_ptr->reent);

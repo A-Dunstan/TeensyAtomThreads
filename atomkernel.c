@@ -421,7 +421,7 @@ FLASHMEM uint8_t atomThreadCreate (ATOM_TCB *tcb_ptr, uint8_t priority, thread_f
         stack_top = (uint8_t *)(((uint32_t)stack_bottom + stack_size) & ~3);
         tcb_ptr->owned = (ATOM_MUTEX*)stack_top - 1;
         tcb_ptr->detach = (ATOM_SEM*)(tcb_ptr->owned) - 1;
-        stack_top = (uint8_t*)((uint32_t)(tcb_ptr->detach) & ~STACK_ALIGN_SIZE);
+        stack_top = (uint8_t*)((uint32_t)(tcb_ptr->detach) & -STACK_ALIGN_SIZE);
 
         if (stack_top <= (uint8_t*)stack_bottom) return ATOM_ERR_PARAM;
 
