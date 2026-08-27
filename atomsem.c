@@ -208,7 +208,7 @@ uint8_t atomSemDelete (ATOM_SEM *sem)
     uint8_t woken_threads = FALSE;
 
     /* Parameter check */
-    if (sem == NULL)
+    if (sem == NULL || sem->limit == 0)
     {
         /* Bad semaphore pointer */
         status = ATOM_ERR_PARAM;
@@ -278,6 +278,9 @@ uint8_t atomSemDelete (ATOM_SEM *sem)
                 break;
             }
         }
+
+        if (status == ATOM_OK)
+          sem->limit = 0;
 
         /* Call scheduler if any threads were woken up */
         if (woken_threads == TRUE)

@@ -209,7 +209,7 @@ uint8_t atomQueueDelete (ATOM_QUEUE *qptr)
     uint8_t woken_threads = FALSE;
 
     /* Parameter check */
-    if (qptr == NULL)
+    if (qptr == NULL || qptr->max_num_msgs == 0)
     {
         /* Bad pointer */
         status = ATOM_ERR_PARAM;
@@ -279,6 +279,9 @@ uint8_t atomQueueDelete (ATOM_QUEUE *qptr)
                 break;
             }
         }
+
+        if (status == ATOM_OK)
+          qptr->max_num_msgs = 0;
 
         /* Call scheduler if any threads were woken up */
         if (woken_threads == TRUE)
