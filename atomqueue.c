@@ -142,7 +142,7 @@ static void atomQueueTimerCallback (POINTER cb_data);
  * @retval ATOM_OK Success
  * @retval ATOM_ERR_PARAM Bad parameters
  */
-uint8_t atomQueueCreate (ATOM_QUEUE *qptr, void *buff_ptr, uint32_t unit_size, uint32_t max_num_msgs)
+uint8_t atomQueueCreate (ATOM_QUEUE *qptr, void *buff_ptr, size_t unit_size, size_t max_num_msgs)
 {
     uint8_t status;
 
