@@ -1,3 +1,6 @@
+#ifndef _TEENSY_ATOM_THREADS_H
+#define _TEENSY_ATOM_THREADS_H
+
 #include "atom.h"
 #include "atommutex.h"
 #include "atomqueue.h"
@@ -61,7 +64,7 @@ private:
 public:
   uint8_t Init() { return atomCondCreate(&cond); }
   uint8_t Deinit() { return atomCondDelete(&cond); }
-  uint8_t Wait(AtomMutex* m, int32_t timeout=0) { return atomCondWait(&cond, &m->mutex, timeout); }
+  uint8_t Wait(AtomMutex& m, int32_t timeout=0) { return atomCondWait(&cond, &m.mutex, timeout); }
   uint8_t Signal() { return atomCondSignal(&cond); }
   uint8_t Broadcast() { return atomCondBroadCast(&cond); }
 
@@ -136,3 +139,5 @@ public:
 };
 
 #endif
+
+#endif // _TEENSY_ATOM_THREADS_H
