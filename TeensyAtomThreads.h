@@ -37,12 +37,7 @@ public:
 
     constexpr AutoLock(AtomMutex& m) : lock(m) {}
     AutoLock(AtomMutex& m, int32_t timeout) : lock(m) { Lock(timeout); }
-    AutoLock(const AutoLock& old) : lock(old.lock) {
-      for (unsigned int i=0; i < old.locked; i++) {
-        if (Lock(-1) != ATOM_OK) break;
-      }
-    }
-    AutoLock(AutoLock& old) : lock(old.lock),locked(old.locked) { old.locked = 0; }
+    AutoLock(const AutoLock& old) = delete;
     AutoLock& operator=(const AutoLock& other) = delete;
     ~AutoLock() { while (locked) lock.Put(), --locked; }
   };
@@ -51,7 +46,6 @@ public:
   uint8_t Deinit() { return atomMutexDelete(&mutex); }
   uint8_t Get(int32_t timeout=0) { return atomMutexGet(&mutex, timeout); }
   uint8_t Put() { return atomMutexPut(&mutex); }
-  AutoLock Lock() { return AutoLock(*this); }
   AutoLock Lock(int32_t timeout) { return AutoLock(*this, timeout); }
 
   AtomMutex() { Init(); }
@@ -77,12 +71,11 @@ class AtomQueue {
 private:
   ATOM_QUEUE queue = {};
 public:
+  typedef msg_t MsgType;
   uint8_t Init(msg_t* msgs, size_t msgs_total) { return atomQueueCreate(&queue, msgs, sizeof(msg_t), msgs_total / sizeof(msg_t)); }
   uint8_t Deinit() { return atomQueueDelete(&queue); }
-  uint8_t Get(int32_t timeout, msg_t& msg) { return atomQueueGet(&queue, timeout, &msg); }
-  uint8_t Get(msg_t& msg) { return Get(0, msg); }
-  uint8_t Put(int32_t timeout, const msg_t& msg) { return atomQueuePut(&queue, timeout, &msg); }
-  uint8_t Put(const msg_t& msg) { return Put(0, msg); }
+  uint8_t Get(msg_t& msg, int32_t timeout=0) { return atomQueueGet(&queue, timeout, &msg); }
+  uint8_t Put(const msg_t& msg, int32_t timeout=0) { return atomQueuePut(&queue, timeout, &msg); }
 
   constexpr AtomQueue() {}
   AtomQueue(msg_t* msgs, size_t msgs_total) { Init(msgs, msgs_total); }
@@ -94,6 +87,7 @@ class TAtomQueue : public AtomQueue<msg_t> {
 private:
   msg_t Msgs[cnt];
 public:
+  enum { MAX_MSG = cnt };
   uint8_t Init() { return AtomQueue<msg_t>::Init(Msgs, sizeof(Msgs)); }
 
   TAtomQueue() { Init(); }
