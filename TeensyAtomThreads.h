@@ -18,35 +18,34 @@ public:
   class AutoLock {
   private:
     AtomMutex& lock;
-    unsigned int locked = 0;
+    unsigned int locked_count;
   public:
     uint8_t Lock(int32_t timeout) {
       uint8_t ret = lock.Get(timeout);
-      if (ret == ATOM_OK) ++locked;
+      if (ret == ATOM_OK) ++locked_count;
       return ret;
     }
     uint8_t Unlock() {
       uint8_t ret = ATOM_OK;
-      if (locked) {
+      if (locked_count) {
         ret = lock.Put();
-        if (ret == ATOM_OK) --locked;
+        if (ret == ATOM_OK) --locked_count;
       }
       return ret;
     }
-    operator bool() const { return locked != 0; }
+    operator bool() const { return locked_count != 0; }
 
-    constexpr AutoLock(AtomMutex& m) : lock(m) {}
-    AutoLock(AtomMutex& m, int32_t timeout) : lock(m) { Lock(timeout); }
+    constexpr AutoLock(AtomMutex& m, unsigned int level=0) : lock(m),locked_count(level) {}
     AutoLock(const AutoLock& old) = delete;
     AutoLock& operator=(const AutoLock& other) = delete;
-    ~AutoLock() { while (locked) lock.Put(), --locked; }
+    ~AutoLock() { while (locked_count) lock.Put(), --locked_count; }
   };
 
   uint8_t Init() { return atomMutexCreate(&mutex); }
   uint8_t Deinit() { return atomMutexDelete(&mutex); }
   uint8_t Get(int32_t timeout=0) { return atomMutexGet(&mutex, timeout); }
   uint8_t Put() { return atomMutexPut(&mutex); }
-  AutoLock Lock(int32_t timeout) { return AutoLock(*this, timeout); }
+  AutoLock Lock(int32_t timeout=0) { return AutoLock(*this, Get()==ATOM_OK ? 1:0); }
 
   AtomMutex() { Init(); }
   ~AtomMutex() { Deinit(); }
