@@ -44,12 +44,12 @@
 
 typedef struct __attribute__((packed)) {
   struct _reent *reent;
+  // r4,r5,r6,r7,r8,r9,r10,r11
+  uint32_t r[8];
   union {
     float s[16]; // s16-s31
     double d[8]; // d8-d15
   };
-  // r4,r5,r6,r7,r8,r9,r10,r11
-  uint32_t r[8];
 } non_volatile_stack;
 
 #define THREAD_PORT_PRIV struct _reent reent;

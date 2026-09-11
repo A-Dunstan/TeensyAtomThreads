@@ -7,10 +7,34 @@
 
 #define IDLE_STACK_SIZE 256
 
-void (*oldPendSV)();
-uint32_t svc_tick;
+class AtomSystickEventResponder : EventResponder
+{
+private:
+  MillisTimer Timer;
+public:
+  AtomSystickEventResponder();
+
+  void triggerEvent(int, void*) {
+    atomIntEnter();
+    atomTimerTick();
+    atomIntExit(TRUE);
+  }
+};
+
+FLASHMEM AtomSystickEventResponder::AtomSystickEventResponder() {
+  // call attachInterrupt to make sure the correct systick ISR gets installed (and PendSV priority is reduced)
+  // no callback function required since triggerEvent() is overridden
+  attachInterrupt(NULL);
+
+  // trigger event every X milliseconds to match SYSTEM_TICKS_PER_SEC (typically 10)
+  Timer.beginRepeating(1000/SYSTEM_TICKS_PER_SEC, *this);
+}
+
 
 extern "C" {
+
+void (*oldPendSV)();
+uint32_t svc_tick;
 
 FLASHMEM void atomThreadTerminate(void* ret) {
   ATOM_TCB* tcb = atomCurrentContext();
@@ -45,8 +69,8 @@ extern void atomSVC_ISR(void);
 typedef struct __attribute__((packed)) {
   non_volatile_stack nv;
   /* 0x00  struct _reent* */
-  /* 0x04  s16-s31 / d8-d15 */
-  /* 0x44  r4-r11 */
+  /* 0x04  r4-r11 */
+  /* 0x24  s16-s31 / d8-d15 */
   /* INTERRUPT CONTEXT BEGINS HERE */
   /* 0x64 */ uint32_t r0,r1,r2,r3;
   /* 0x74 */ uint32_t r12;
@@ -102,33 +126,9 @@ uint64_t archThreadTicks(ATOM_TCB *tcb_ptr) {
   return current->ticks + (uint32_t)(ARM_DWT_CYCCNT - svc_tick);
 }
 
-}
-
-class AtomSystickEventResponder : EventResponder
-{
-private:
-  MillisTimer Timer;
-public:
-  AtomSystickEventResponder();
-
-  void triggerEvent(int, void*) {
-    atomIntEnter();
-    atomTimerTick();
-    atomIntExit(TRUE);
-  }
-};
-
-FLASHMEM AtomSystickEventResponder::AtomSystickEventResponder() {
-  // call attachInterrupt to make sure the correct systick ISR gets installed (and PendSV priority is reduced)
-  // no callback function required since triggerEvent() is overridden
-  attachInterrupt(NULL);
-
-  // trigger event every X milliseconds to match SYSTEM_TICKS_PER_SEC (typically 10)
-  Timer.beginRepeating(1000/SYSTEM_TICKS_PER_SEC, *this);
-}
-
 // switch from mainSP to processSP, allocate new stack for mainSP
-FLASHMEM static void __switchStack(void) {
+__attribute__((weak))
+FLASHMEM void __switchStack(void) {
   static uint8_t handlerStack[2048] __attribute__((aligned(8)));
   uint32_t r;
   void *st = &handlerStack[sizeof(handlerStack)];
@@ -146,17 +146,15 @@ FLASHMEM static void __switchStack(void) {
   );
 }
 
-extern "C" FLASHMEM void startup_middle_hook(void) {
+FLASHMEM void startup_middle_hook(void) {
   static ATOM_TCB main_tcb;
   // stack for idle thread
-  static uint8_t idleStack[IDLE_STACK_SIZE] __attribute__((aligned(8)));
+  static uint8_t idleStack[IDLE_STACK_SIZE] __attribute__((aligned(STACK_ALIGN_SIZE)));
 
   // used to restore execution of main thread after it gets activated by the scheduler
   jmp_buf jmp;
   // archThreadContextInit needs temp space to create a context frame for the main thread
   uint32_t stk[256] __attribute__((aligned(8)));
-
-  __switchStack();
 
   if (setjmp(jmp)!=0)
     return;
@@ -166,6 +164,8 @@ extern "C" FLASHMEM void startup_middle_hook(void) {
       // this is a static instance but not declared as one so placement new can be invoked
       // (should be initialized before other static classes)
       alignas(AtomSystickEventResponder) static uint8_t aser[sizeof(AtomSystickEventResponder)];
+
+      __switchStack();
 
       new(aser) AtomSystickEventResponder();
 
@@ -191,3 +191,4 @@ extern "C" FLASHMEM void startup_middle_hook(void) {
   }
 }
 
+}
