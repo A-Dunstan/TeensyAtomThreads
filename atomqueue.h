@@ -42,7 +42,7 @@ typedef struct atom_queue
     size_t      max_num_msgs;   /* Max number of storable messages */
     size_t      insert_index;   /* Next byte index to insert into */
     size_t      remove_index;   /* Next byte index to remove from */
-    uint32_t    num_msgs_stored;/* Number of messages stored */
+    size_t      num_msgs_stored;/* Number of messages stored */
 } ATOM_QUEUE;
 
 extern uint8_t atomQueueCreate (ATOM_QUEUE *qptr, void *buff_ptr, size_t unit_size, size_t max_num_msgs);

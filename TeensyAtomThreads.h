@@ -75,6 +75,8 @@ public:
   uint8_t Deinit() { return atomQueueDelete(&queue); }
   uint8_t Get(msg_t& msg, int32_t timeout=0) { return atomQueueGet(&queue, timeout, &msg); }
   uint8_t Put(const msg_t& msg, int32_t timeout=0) { return atomQueuePut(&queue, timeout, &msg); }
+  size_t Size() const { return queue.num_msgs_stored; }
+  size_t Capacity() const { return queue.max_num_msgs; }
 
   constexpr AtomQueue() {}
   AtomQueue(msg_t* msgs, size_t msgs_total) { Init(msgs, msgs_total); }
